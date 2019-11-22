@@ -30,6 +30,7 @@ struct srTRadIntPerStoPrec {
 	int InitHarm, FinHarm;
 	double Kns, Knphi;
 	char IntensityOrFlux;
+	double MinPhotEnExtRight; //OC170713
 
 	//srTRadIntPerStoPrec(int InInitHarm, int InFinHarm, double InKns, double InKnphi, char InIntensityOrFlux)
 	//{
@@ -204,7 +205,9 @@ public:
 	//int ComputeTotalStokesDistr(srTStokesStructAccessData&);
 	int ComputeTotalStokesDistr(srTStokesStructAccessData* pStokesAccessData, SRWLStructStokes* pStokesSRWL=0);
 
+	//int DeduceGridOverPhotonEnergyAndAzimuth(int n, double& eStart, double& eFin, long long& ne, srTEnergyAzimuthGrid& EnAzGrid); //OC26042019
 	int DeduceGridOverPhotonEnergyAndAzimuth(int n, double& eStart, double& eFin, long& ne, srTEnergyAzimuthGrid& EnAzGrid);
+	//void CorrectGridForPassingThroughCritEnergy(int n, double& eStart, double& eStep, long long& ne); //OC26042019
 	void CorrectGridForPassingThroughCritEnergy(int n, double& eStart, double& eStep, long& ne);
 	void CorrectGridToAllowRangeResizeOnTheOtherSide(srTEnergyAzimuthGrid& EnAzGrid);
 	void CorrectGridForOnePoint(srTEnergyAzimuthGrid& EnAzGrid);
@@ -230,17 +233,21 @@ public:
 	double PhiIntToResolveBox(double x1, double x2, double y1, double y2, double rAvg);
 
 	//int ComputeHarmContribToSpecAtDir(int n, srTEnergyAzimuthGrid& EnAzGrid, float** LongIntArrays, int** LongIntArrInfo, float* pOutEnSlice);
-	int ComputeHarmContribToSpecAtDir(int n, srTEnergyAzimuthGrid& EnAzGrid, double** LongIntArrays, int** LongIntArrInfo, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long ofstSt); //OC020112
+	//int ComputeHarmContribToSpecAtDir(int n, srTEnergyAzimuthGrid& EnAzGrid, double** LongIntArrays, int** LongIntArrInfo, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long ofstSt); //OC020112
+	int ComputeHarmContribToSpecAtDir(int n, srTEnergyAzimuthGrid& EnAzGrid, double** LongIntArrays, int** LongIntArrInfo, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long long ofstSt); //OC020112
 	void FillInSymPartsOfResults(char FinalResAreSymOverX, char FinalResAreSymOverZ, srTStokesStructAccessData*, SRWLStructStokes*); //080612
 	//void FillInSymPartsOfResults(char FinalResAreSymOverX, char FinalResAreSymOverZ, srTStokesStructAccessData&);
 
 	//int TreatEnergySpreadAndFiniteNumberOfPeriods(int n, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* pOutEnSlice);
-	int TreatEnergySpreadAndFiniteNumberOfPeriods(int n, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long ofstSt); //OC020112
+	//int TreatEnergySpreadAndFiniteNumberOfPeriods(int n, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long ofstSt); //OC020112
+	int TreatEnergySpreadAndFiniteNumberOfPeriods(int n, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long long ofstSt); //OC020112
 	//int FilamentTreatEnergySpreadAndFiniteNumberOfPeriods(int n, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* pOutEnSlice);
-	int FilamentTreatEnergySpreadAndFiniteNumberOfPeriods(int n, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long ofstSt); //OC020112
+	//int FilamentTreatEnergySpreadAndFiniteNumberOfPeriods(int n, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long ofstSt); //OC020112
+	int FilamentTreatEnergySpreadAndFiniteNumberOfPeriods(int n, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long long ofstSt); //OC020112
 
 	//int ConvStokesCompon(int StokesNo, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* ConvFactorData, float* pOutEnSlice);
-	int ConvStokesCompon(int StokesNo, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* ConvFactorData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long ofstSt); //OC020112
+	//int ConvStokesCompon(int StokesNo, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* ConvFactorData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long ofstSt); //OC020112
+	int ConvStokesCompon(int StokesNo, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* ConvFactorData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long long ofstSt); //OC020112
 	void FindIntegralOfInfNperData(int n, srTEnergyAzimuthGrid& EnAzGrid, float* InfNperHarmData);
 	double EstimateTaperResCurveWidth(int n);
 
@@ -288,7 +295,8 @@ public:
 			*(tSym++) = ChangeSignS3? -(*(tOrig++)) : *(tOrig++);
 		}
 	}
-	void CopySymEnergySliceSRWL(SRWLStructStokes& stk, long ofstOrigData, long ofstSymData, char SymWithRespectToXax, char SymWithRespectToZax)
+	//void CopySymEnergySliceSRWL(SRWLStructStokes& stk, long ofstOrigData, long ofstSymData, char SymWithRespectToXax, char SymWithRespectToZax)
+	void CopySymEnergySliceSRWL(SRWLStructStokes& stk, long long ofstOrigData, long long ofstSymData, char SymWithRespectToXax, char SymWithRespectToZax)
 	{
 		char ChangeSignS2 = !(SymWithRespectToXax && SymWithRespectToZax);
 		char ChangeSignS3 = SymWithRespectToXax;
@@ -509,7 +517,8 @@ public:
 	//void ZeroOutData(srTStokesStructAccessData& StokesAccessData)
 	void ZeroOutData(srTStokesStructAccessData* pStokesAccessData, SRWLStructStokes* pStokesSRWL)
 	{
-		long Ne, Nx, Nz;
+		//long Ne, Nx, Nz;
+		long long Ne, Nx, Nz; //OC26042019
 		if(pStokesAccessData != 0)
 		{
 			Ne = pStokesAccessData->ne;

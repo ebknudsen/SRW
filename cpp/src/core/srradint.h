@@ -62,8 +62,10 @@ class srTRadInt {
 
 	double *BtxArrP[50], *XArrP[50], *IntBtxE2ArrP[50], *BxArrP[50];
 	double *BtzArrP[50], *ZArrP[50], *IntBtzE2ArrP[50], *BzArrP[50];
-	int AmOfPointsOnLevel[50];
-	int NumberOfLevelsFilled;
+	//int AmOfPointsOnLevel[50];
+	//int NumberOfLevelsFilled;
+	long long AmOfPointsOnLevel[50];
+	long long NumberOfLevelsFilled;
 	double MaxFluxDensVal, CurrentAbsPrec;
 	int MaxLevelForMeth_10_11;
 
@@ -108,10 +110,12 @@ public:
 
 	double sIntegStart, sIntegFin, sIntegStep, sIntegRelPrec, sIntegStep_Input;
 	double Inv_sIntegStep;
-	int AmOfPointsForManIntegr;
+	//int AmOfPointsForManIntegr;
+	long long AmOfPointsForManIntegr;
 	char sIntegMethod, UseManualSlower;
 	double MaxMemAvail, CurrMemAvail;
-	long MaxNumPoToSave;
+	//long MaxNumPoToSave;
+	long long MaxNumPoToSave;
 	
 	char TryToApplyNearFieldResidual;
 	char TryToApplyNearFieldResidual_AtRight;
@@ -172,7 +176,8 @@ public:
 	inline void FunForRadIntWithDer(double, complex<double>*, complex<double>*);
 	
 	int RadIntegrationAuto1(double&, double&, double&, double&, srTEFourier*);
-	int RadIntegrationAuto1M(double sStart, double sEnd, double* FunArr, double* EdgeDerArr, int AmOfInitPo, int NextLevNo, double& OutIntXRe, double& OutIntXIm, double& OutIntZRe, double& OutIntZIm);
+	//int RadIntegrationAuto1M(double sStart, double sEnd, double* FunArr, double* EdgeDerArr, int AmOfInitPo, int NextLevNo, double& OutIntXRe, double& OutIntXIm, double& OutIntZRe, double& OutIntZIm);
+	int RadIntegrationAuto1M(double sStart, double sEnd, double* FunArr, double* EdgeDerArr, long long AmOfInitPo, int NextLevNo, double& OutIntXRe, double& OutIntXIm, double& OutIntZRe, double& OutIntZIm);
 	int RadIntegrationAuto2(double&, double&, double&, double&, srTEFourier*);
 
 	inline void CosAndSin(double x, double& Cos, double& Sin);
@@ -182,8 +187,10 @@ public:
 	inline void AxAzPhFarField2(int LevelNo, int IndxOnLevel, double s, double& Ax, double& Az, double& Ph);
 	inline void AxAzPhNearField2(int LevelNo, int IndxOnLevel, double s, double& Ax, double& Az, double& Ph);
 
-	inline int FillNextLevel(int LevelNo, double sStart, double sEnd, long Np);
-	int FillNextLevelPart(int LevelNo, double sStart, double sEnd, long Np, double*** TrjPtrs);
+	//inline int FillNextLevel(int LevelNo, double sStart, double sEnd, long Np);
+	inline int FillNextLevel(int LevelNo, double sStart, double sEnd, long long Np);
+	//int FillNextLevelPart(int LevelNo, double sStart, double sEnd, long Np, double*** TrjPtrs);
+	int FillNextLevelPart(int LevelNo, double sStart, double sEnd, long long Np, double*** TrjPtrs);
 
 	inline int SetupRadCompStructures();
 	inline int SetupRadCompStructMethAuto2();
@@ -225,7 +232,8 @@ inline double srTRadInt::IntegrateDistrLine(int kk)
 		Step = (DistrInfoDat.nz > 1)? (DistrInfoDat.zEnd - DistrInfoDat.zStart)/(DistrInfoDat.nz - 1) : 0.;
 	else Step = (DistrInfoDat.nx > 1)? (DistrInfoDat.xEnd - DistrInfoDat.xStart)/(DistrInfoDat.nx - 1) : 0.;
 
-	int nn = (DistrInfoDat.IntegrDistrMap == MapVsHor)? DistrInfoDat.nz : DistrInfoDat.nx;
+	//int nn = (DistrInfoDat.IntegrDistrMap == MapVsHor)? DistrInfoDat.nz : DistrInfoDat.nx;
+	long long nn = (DistrInfoDat.IntegrDistrMap == MapVsHor)? DistrInfoDat.nz : DistrInfoDat.nx; //OC26042019
 	double* LocDistrPtr = &(RadDistrPhotonFluxHorPol[kk*nn]);
 	double LocSum = 0.5*(*(LocDistrPtr++));
 	for(int k=1; k<(nn - 1); k++) LocSum += *(LocDistrPtr++);
@@ -677,7 +685,8 @@ inline void srTRadInt::ReformatRadDistrCompRes()
 
 	if(DistrInfoDat.DistrValType == StokesParam)
 	{
-		int TotAmOfData = DistrInfoDat.nLamb * DistrInfoDat.ny * DistrInfoDat.nz * DistrInfoDat.nx;
+		//int TotAmOfData = DistrInfoDat.nLamb * DistrInfoDat.ny * DistrInfoDat.nz * DistrInfoDat.nx;
+		long long TotAmOfData = DistrInfoDat.nLamb * DistrInfoDat.ny * DistrInfoDat.nz * DistrInfoDat.nx; //OC26042019
 		double s0, s1, s2, s3;
 
 		complex<double>* LocHorPolTravers = RadDistrFieldFourierHorPol;
@@ -975,7 +984,8 @@ inline void srTRadInt::AxAzPhFarField2(int LevelNo, int IndxOnLevel, double s, d
 
 //*************************************************************************
 
-inline int srTRadInt::FillNextLevel(int LevelNo, double sStart, double sEnd, long Np)
+//inline int srTRadInt::FillNextLevel(int LevelNo, double sStart, double sEnd, long Np)
+inline int srTRadInt::FillNextLevel(int LevelNo, double sStart, double sEnd, long long Np)
 {
 	double* BasePtr = new double[Np*8];
 	//if(BasePtr == 0) { pSend->ErrorMessage("SR::Error900"); return MEMORY_ALLOCATION_FAILURE;}
@@ -1082,7 +1092,7 @@ inline int srTRadInt::EvaluateMemAvailAfterTrjComp()
 	else if((sIntegMethod == 10) || (sIntegMethod == 11))
 	{
 		const int NpOnZeroLev = 5; // Change here if it is changed in Auto methods
-		double BufDouble = (MaxNumPoToSave - 1)/(NpOnZeroLev - 1);
+		double BufDouble = (double)((MaxNumPoToSave - 1)/(NpOnZeroLev - 1));
 
 		MaxLevelForMeth_10_11 = int(log(BufDouble)*1.443);
 	}

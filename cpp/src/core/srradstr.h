@@ -55,6 +55,8 @@ struct SRWLStructWaveFront;
 typedef struct SRWLStructWaveFront SRWLWfr;
 struct SRWLStructParticleBeam;
 typedef struct SRWLStructParticleBeam SRWLPartBeam;
+struct SRWLStructRadMesh;
+typedef struct SRWLStructRadMesh SRWLRadMesh;
 
 //*************************************************************************
 
@@ -66,13 +68,17 @@ public:
 
 	bool BaseRadWasEmulated;
 	float *pBaseRadX, *pBaseRadZ;
+	float *pBaseRadXaux, *pBaseRadZaux; //OC151115
 	waveHndl wRad, wRadX, wRadZ;
 	int hStateRadX, hStateRadZ;
 	double eStep, eStart, xStep, xStart, zStep, zStart;
 	long ne, nx, nz;
+	//long long ne, nx, nz; //OC26042019
 
 	double xStartTr, zStartTr;
 	bool UseStartTrToShiftAtChangingRepresToCoord;
+	//double tStartTr; //OC091115 //to check!
+	//bool UseStartTrToShiftAtChangingRepresToTime; //OC091115 
 
 	double RobsX, RobsZ; //these values should be treated as distances to waists
 	double RobsXAbsErr, RobsZAbsErr;
@@ -80,6 +86,7 @@ public:
 	double xWfrMin, xWfrMax, zWfrMin, zWfrMax; // Exact borders of the Wavefront
 	char WfrEdgeCorrShouldBeDone; // To switch off/on manually
 	double avgPhotEn; //averarage photon energy for time-domain simulations
+	double avgT; //OC101115 //averarage tiem (auxiliary value)
 
 	double UnderSamplingX, UnderSamplingZ;
 	char AllowAutoSwitchToPropInUnderSamplingMode;
@@ -93,10 +100,13 @@ public:
 	char PresT; // 0- Frequency (Photon Energy), 1- Time Domain (i.e. ne, eStep, eStart contain time parameters)
 	char LengthUnit; // 0- m; 1- mm; 
 	char PhotEnergyUnit; // 0- eV; 1- keV; 
-	char ElecFldUnit; // 0- Arb. Units, 1- sqrt(Phot/s/0.1%bw/mm^2)
+	char ElecFldUnit; // 0- Arb. Units, 1- sqrt(Phot/s/0.1%bw/mm^2), 2- sqrt(J/eV/mm^2) or sqrt(W/mm^2), depending on representation (freq. or time)
+	//OC20112017
+	char ElecFldAngUnit; //Electric field units in angular representation: 0- sqrt(Wavelength[m]*Phot/s/0.1%bw/mrad^2) vs rad/Wavelength[m], 1- sqrt(Phot/s/0.1%bw/mrad^2) vs rad; [Phot/s/0.1%bw] can be replaced by [J/eV] or [W], depending on ElecFldUnit, PresT and Pres
 
 	bool WfrQuadTermCanBeTreatedAtResizeX; // is used at the time of one resize only
 	bool WfrQuadTermCanBeTreatedAtResizeZ;
+	double wfrReffX, wfrReffZ; //effective wavefront radii (to be used e.g. at resize) //OC150914
 
 	char ElectronBeamEmulated; // 0 by def.
 	DOUBLE *pElecBeam;
@@ -145,7 +155,9 @@ public:
 	srTSRWRadStructAccessData(const srTSRWRadStructAccessData&, bool createNewEmulStruct=true); //OC140411
 	srTSRWRadStructAccessData(srTWfrSmp* pWfrSmp, bool AllocateData); //used for extracting transmission characteristics of optical elements
 	srTSRWRadStructAccessData(SRWLWfr*, srTTrjDat* pTrj=0, double* arPrec=0);
-	srTSRWRadStructAccessData(SRWLWfr*, srTGsnBeam* pGsnBeam, double* arPrec=0);
+	srTSRWRadStructAccessData(SRWLWfr*, srTGsnBeam*, double* arPrec=0);
+	srTSRWRadStructAccessData(SRWLWfr*, double longPosSrc, double* arPrec=0); //Used for setting up spherical wave
+
 	srTSRWRadStructAccessData()
 	{
 		Initialize();
@@ -185,6 +197,7 @@ public:
 	void ProcessNxNzForPropag(srTWfrSmp* pWfrSmp, double NxNzOversamplingFactor);
 	//void ProcessNxNzForPropag(double NxNzOversamplingFactor, long& nx, long& nz);
     void CheckNxNzForSR(srTWfrSmp* pWfrSmp, double NxNzOversamplingFactor);
+	//void CheckNxNzForSR(double NxNzOversamplingFactor, long long& _nx, long long& _nz); //OC26042019
 	void CheckNxNzForSR(double NxNzOversamplingFactor, long& _nx, long& _nz);
 
 	void AllocElectronBeam();
@@ -205,7 +218,11 @@ public:
 	void OutSRWRadPtrs(SRWLWfr&);
 
 	//srTSRWRadInData* CreateCorrespSRWRadInData();
-	int ModifyWfrNeNxNz(char PolarizComp = 0);
+	//int ModifyWfrNeNxNz(char PolarizComp = 0);
+	int ModifyWfrNeNxNz(char PolarizComp = 0, bool backupIsReq = false); //OC131115
+	int DeleteWfrBackupData(char PolarizComp = 0); //OC151115
+	int AllocExtIntArray(char type, char dep, char*& pcAlloc); //OC18082018
+
 	int GetWfrStructNames(srTSRWRadStructWaveNames& RadStructNames);
 	int CreateNewWfrStruct(srTSRWRadStructWaveNames& Names);
 	int DeleteWfrStructWaves(srTSRWRadStructWaveKeys& RadKeys);
@@ -226,9 +243,17 @@ public:
 	int ExtractSliceConstEorT(long ie, float*& pOutEx, float*& pOutEz);
 	int SetupSliceConstEorT(long ie, float* pInEx, float* pInEz);
 
+	int ShiftWfrByInterpolVsXZ(double shiftX, double shiftY);
+	void FlipFieldData(bool flipOverX, bool flipOverZ);
+	void TransposeFieldData();
+
 	int SetRepresCA(char CoordOrAng); //set Coordinate or Angular representation
 	int SetRepresFT(char FreqOrTime); //set Frequency or Time representation
 	int ComputeRadMoments();
+
+	//void EstimWfrRadCen(double& resR, double& resCen, char cutX_or_Z, char fldX_or_Z=0, double relArgRange=0.2, double relArgCenOther=0.5);
+	bool CheckIfQuadTermTreatIsBenefit(char cutX_or_Z, char fldX_or_Z=0);
+	void GetIntMesh(char dep, SRWLRadMesh& mesh); //OC23082018
 
 	void SetupSrwWfrAuxData()
 	{
@@ -662,13 +687,15 @@ public:
 		if(ChangeSign) { Cos = -Cos; Sin = -Sin;}
 	}
 
-	void SetupExpCorrArray(float* pCmpData, long AmOfPt, double x, double qStart, double qStep)
+	//void SetupExpCorrArray(float* pCmpData, long AmOfPt, double x, double qStart, double qStep)
+	void SetupExpCorrArray(float* pCmpData, long long AmOfPt, double x, double qStart, double qStep)
 	{
 		const double TwoPi = 6.28318530717959;
 		double TwoPiX = TwoPi*x;
 		double q = qStart;
 		float *tCmpData = pCmpData;
-		for(long i=0; i<AmOfPt; i++)
+		//for(long i=0; i<AmOfPt; i++)
+		for(long long i=0; i<AmOfPt; i++)
 		{
 			double Arg = TwoPiX*q;
 			float Co, Si;
@@ -678,21 +705,262 @@ public:
 		}
 	}
 
-	void SetupRadXorZSectFromSliceConstEorT(float* pInEx, float* pInEz, long _nx, long _nz, char vsX_or_vsZ, long iSect, float* pOutEx, float* pOutEz)
+	void SetupRadXorZSectFromSliceConstEorT(float* pInEx, float* pInEz, long long _nx, long long _nz, char vsX_or_vsZ, long long iSect, float* pOutEx, float* pOutEz) //OC26042019
+	//void SetupRadXorZSectFromSliceConstEorT(float* pInEx, float* pInEz, long _nx, long _nz, char vsX_or_vsZ, long iSect, float* pOutEx, float* pOutEz)
 	{
-		long Per = (vsX_or_vsZ == 'x')? 2 : (_nx << 1);
+		//long Per = (vsX_or_vsZ == 'x')? 2 : (_nx << 1);
+		long long Per = (vsX_or_vsZ == 'x')? 2 : (_nx << 1); //OC26042019
 		float *tOutEx = pOutEx, *tOutEz = pOutEz;
-		long StartOffset = (vsX_or_vsZ == 'x')? iSect*(_nx << 1) : (iSect << 1);
+		//long StartOffset = (vsX_or_vsZ == 'x')? iSect*(_nx << 1) : (iSect << 1);
+		long long StartOffset = (vsX_or_vsZ == 'x')? iSect*(_nx << 1) : (iSect << 1); //OC26042019
 		float *tEx = pInEx + StartOffset, *tEz = pInEz + StartOffset;
-		long nPt = (vsX_or_vsZ == 'x')? _nx : _nz;
+		//long nPt = (vsX_or_vsZ == 'x')? _nx : _nz;
+		long long nPt = (vsX_or_vsZ == 'x')? _nx : _nz; //OC26042019
 
-		for(int i=0; i<nPt; i++)
+		for(long long i=0; i<nPt; i++) //OC26042019
+		//for(int i=0; i<nPt; i++)
 		{
 			*(tOutEx++) = *tEx; *(tOutEx++) = *(tEx + 1);
 			*(tOutEz++) = *tEz; *(tOutEz++) = *(tEz + 1);
 			tEx += Per; tEz += Per;
 		}
 	}
+
+	bool QuadPhaseTermCanBeTreated()
+	{//Later treat X and Z fully separately here and at removing the corresponding terms from Phase !!!
+	 //same as srTGenOptElem::WaveFrontTermCanBeTreated(srTSRWRadStructAccessData& RadAccessData)
+		const double CritRatTransvLong = 0.1;
+		const double CritRelRobsErr = 0.2; //0.1; //0.2;
+		const double Pi = 3.14159265358979;
+
+		char RobsXErrIsSmall = ::fabs(RobsXAbsErr) < CritRelRobsErr*(::fabs(RobsX));
+		char RobsZErrIsSmall = ::fabs(RobsZAbsErr) < CritRelRobsErr*(::fabs(RobsZ));
+
+		if(Pres == 0) // Coord
+		{
+			double xMagn = ::fabs((nx - 1)*xStep);
+			double zMagn = ::fabs((nz - 1)*zStep);
+
+			char AnglesXAreSmall = (xMagn < CritRatTransvLong*(::fabs(RobsX)));
+			char AnglesZAreSmall = (zMagn < CritRatTransvLong*(::fabs(RobsZ)));
+
+			WfrQuadTermCanBeTreatedAtResizeX = (AnglesXAreSmall && RobsXErrIsSmall);
+			WfrQuadTermCanBeTreatedAtResizeZ = (AnglesZAreSmall && RobsZErrIsSmall);
+
+			return (WfrQuadTermCanBeTreatedAtResizeX || WfrQuadTermCanBeTreatedAtResizeZ);
+		}
+		else // Ang
+		{// Not sure about this...
+			double ePh = eStart;
+			double xRatMax = 1.E-23, zRatMax = 1.E-23, MaxPhaseChange = 1.E-23;
+			for(int ie=0; ie<ne; ie++)
+			{
+				double Lambda_m = 1.239842e-06/ePh;
+				double xTetMagn = ::fabs((nx - 1)*xStep*Lambda_m);
+				double zTetMagn = ::fabs((nz - 1)*zStep*Lambda_m);
+				double PhaseChange = ::fabs((Pi/Lambda_m)*(RobsX*xTetMagn*xTetMagn + RobsZ*zTetMagn*zTetMagn));
+
+				if(xTetMagn > xRatMax) xRatMax = xTetMagn;
+				if(zTetMagn > zRatMax) zRatMax = zTetMagn;
+				if(PhaseChange > MaxPhaseChange) MaxPhaseChange = PhaseChange;
+
+				ePh += eStep;
+			}
+
+			char AnglesXAreSmall = (xRatMax < CritRatTransvLong);
+			char AnglesZAreSmall = (zRatMax < CritRatTransvLong);
+			char PhaseChangeIsLarge = (MaxPhaseChange > 2.*Pi);
+
+			WfrQuadTermCanBeTreatedAtResizeX = (AnglesXAreSmall && RobsXErrIsSmall);
+			WfrQuadTermCanBeTreatedAtResizeZ = (AnglesZAreSmall && RobsZErrIsSmall);
+
+			return ((WfrQuadTermCanBeTreatedAtResizeX || WfrQuadTermCanBeTreatedAtResizeZ) && PhaseChangeIsLarge);
+		}
+	}
+
+	void TreatQuadPhaseTermTerm(char AddOrRem, char PolComp=0, int ieOnly=-1)
+	{//same as srTGenOptElem::TreatStronglyOscillatingTerm(srTSRWRadStructAccessData& RadAccessData, char AddOrRem, char PolComp, int ieOnly)
+		//Later treat X and Z coordinates separately here!!!
+
+		char TreatPolCompX = ((PolComp == 0) || (PolComp == 'x')) && (pBaseRadX != 0);
+		char TreatPolCompZ = ((PolComp == 0) || (PolComp == 'z')) && (pBaseRadZ != 0);
+
+		const double Pi = 3.14159265358979;
+		double Const = Pi*1.E+06/1.239854; // Assumes m and eV
+
+		double ConstRx = (Pres == 0)? Const/RobsX : -Const*RobsX;
+		double ConstRz = (Pres == 0)? Const/RobsZ : -Const*RobsZ;
+
+		if(AddOrRem == 'r') { ConstRx = -ConstRx; ConstRz = -ConstRz;}
+
+		double ConstRxE, ConstRzE;
+		double ePh = eStart, x, z, zE2;
+		double Phase;
+		float CosPh, SinPh;
+
+		float *pEX0 = 0, *pEZ0 = 0;
+		if(TreatPolCompX) pEX0 = pBaseRadX;
+		if(TreatPolCompZ) pEZ0 = pBaseRadZ;
+
+		//long PerX = ne << 1;
+		//long PerZ = PerX*nx;
+		long long PerX = ne << 1;
+		long long PerZ = PerX*nx;
+
+		//int ieStart=0, ieBefEnd=ne;
+		long long ieStart=0, ieBefEnd=ne; //OC26042019
+		if((ieOnly >= 0) && (ieOnly < ne))
+		{
+			ieStart = ieOnly; ieBefEnd = ieOnly + 1;
+		}
+
+		for(long long ie=ieStart; ie<ieBefEnd; ie++) //OC26042019
+		//for(int ie=ieStart; ie<ieBefEnd; ie++)
+		{
+			if(PresT == 1)
+			{
+				ePh = avgPhotEn; //?? OC041108
+			}
+
+			//long Two_ie = ie << 1;
+			long long Two_ie = ie << 1;
+
+			ConstRxE = ConstRx*ePh;
+			ConstRzE = ConstRz*ePh;
+
+			if(Pres == 1)
+			{
+				double Lambda_m = 1.239842e-06/ePh;
+				if(PhotEnergyUnit == 1) Lambda_m *= 0.001; // if keV
+
+				double Lambda_me2 = Lambda_m*Lambda_m;
+				ConstRxE *= Lambda_me2;
+				ConstRzE *= Lambda_me2;
+			}
+
+			z = zStart - zc;
+
+			zE2 = z*z;
+			double PhaseAddZ = 0.;
+			if(WfrQuadTermCanBeTreatedAtResizeZ) PhaseAddZ = ConstRzE*zE2;
+
+			for(int iz=0; iz<nz; iz++)
+			{
+				//long izPerZ = iz*PerZ;
+				long long izPerZ = iz*PerZ;
+				float *pEX_StartForX = pEX0 + izPerZ;
+				float *pEZ_StartForX = pEZ0 + izPerZ;
+
+				x = xStart - xc;
+
+				for(int ix=0; ix<nx; ix++)
+				{
+					//long ixPerX_p_Two_ie = ix*PerX + Two_ie;
+					long long ixPerX_p_Two_ie = ix*PerX + Two_ie;
+
+					//Phase = ConstRxE*x*x + ConstRzE*zE2;
+					Phase = PhaseAddZ;
+					if(WfrQuadTermCanBeTreatedAtResizeX) Phase += ConstRxE*x*x;
+
+					CosAndSin(Phase, CosPh, SinPh);
+
+					if(TreatPolCompX)
+					{
+						float *pExRe = pEX_StartForX + ixPerX_p_Two_ie;
+						float *pExIm = pExRe + 1;
+						double ExReNew = (*pExRe)*CosPh - (*pExIm)*SinPh;
+						double ExImNew = (*pExRe)*SinPh + (*pExIm)*CosPh;
+						*pExRe = (float)ExReNew; *pExIm = (float)ExImNew;
+					}
+					if(TreatPolCompZ)
+					{
+						float *pEzRe = pEZ_StartForX + ixPerX_p_Two_ie;
+						float *pEzIm = pEzRe + 1;
+						double EzReNew = (*pEzRe)*CosPh - (*pEzIm)*SinPh;
+						double EzImNew = (*pEzRe)*SinPh + (*pEzIm)*CosPh;
+						*pEzRe = (float)EzReNew; *pEzIm = (float)EzImNew;
+					}
+
+					x += xStep;
+				}
+				z += zStep;
+				zE2 = z*z;
+				PhaseAddZ = 0.;
+				if(WfrQuadTermCanBeTreatedAtResizeZ) PhaseAddZ = ConstRzE*zE2;
+			}
+			ePh += eStep;
+		}
+	}
+
+	void CopySymEnergySlice(float* pOrigDataEx, float* pOrigDataEz, float* pSymDataEx, float* pSymDataEz, bool ChangeSignEx, bool ChangeSignEz)
+	{
+		float *tOrigEx = pOrigDataEx, *tSymEx = pSymDataEx;
+		float *tOrigEz = pOrigDataEz, *tSymEz = pSymDataEz;
+		for(int ie = 0; ie < ne; ie++)
+		{
+			*tSymEx = *(tOrigEx++); *(tSymEx + 1) = *(tOrigEx++);
+			if(ChangeSignEx) { *tSymEx = -(*tSymEx); *(tSymEx + 1) *= -(*(tSymEx + 1)); }
+			tSymEx += 2;
+
+			*tSymEz = *(tOrigEz++); *(tSymEz + 1) = *(tOrigEz++);
+			if(ChangeSignEz) { *tSymEz = -(*tSymEz); *(tSymEz + 1) *= -(*(tSymEz + 1)); }
+			tSymEz += 2;
+		}
+	}
+
+	void SwapDataInEnergySlice(float* pOrigDataEx, float* pOrigDataEz, float* pSymDataEx, float* pSymDataEz, bool treatEx=true, bool treatEz=true)
+	{
+		float auxE;
+		float *tOrigEx = pOrigDataEx, *tSymEx = pSymDataEx;
+		float *tOrigEz = pOrigDataEz, *tSymEz = pSymDataEz;
+		for(int ie = 0; ie < ne; ie++)
+		{
+			if(treatEx)
+			{
+				auxE = *tOrigEx; *(tOrigEx++) = *tSymEx; *(tSymEx++) = auxE;
+				auxE = *tOrigEx; *(tOrigEx++) = *tSymEx; *(tSymEx++) = auxE;
+			}
+			if(treatEz)
+			{
+				auxE = *tOrigEz; *(tOrigEz++) = *tSymEz; *(tSymEz++) = auxE;
+				auxE = *tOrigEz; *(tOrigEz++) = *tSymEz; *(tSymEz++) = auxE;
+			}
+		}
+	}
+
+	//double EstimWaveFrontRadiusOnAxis(char x_or_y)
+	//{
+	//	double start, step, cen;
+	//	long n = 0;
+
+	//	if((x_or_y == 'x') || (x_or_y == 'X'))
+	//	{
+	//		start = xStart; step = xStep; n = nx; cen = xc;
+	//	}
+	//	else if((x_or_y == 'y') || (x_or_y == 'Y') || (x_or_y == 'z') || (x_or_y == 'Z'))
+	//	{
+	//		start = zStart; step = zStep; n = nz; cen = zc;
+	//	}
+	//	
+	//	if(step == 0.) return 0.;
+	//	if(n < 3) return 0.;
+
+	//	long ic = long((cen - start)/step + 1.e-13);
+	//	if((cen - (ic*step + start)) > 0.5*step) ic++;
+	//	long nmi1 = n - 1;
+	//	if((ic < 0) || (ic > nmi1)) return 0.;
+
+	//	long np = 5, icm2 = ic - 2, icm1 = ic - 1, icp1 = ic + 1, icp2 = ic + 2;
+	//	if(icm2 < 0) np--;
+	//	if(icm1 < 0) np--;
+	//	if(icp1 > nmi1) np--;
+	//	if(icp2 > nmi1) np--;
+	//	if(np < 3) return 0.;
+
+	//	//OC: to continue from here
+	//
+	//	return 0.;
+	//}
 
 	void GetWaveFrontNormal(double x, double y, double& nx, double& ny)
 	{//to improve!
@@ -722,6 +990,19 @@ public:
 	{
 		if((pBaseRadX == 0) && (pBaseRadZ == 0)) return false;
 		else return true;
+	}
+
+	long long GetIntNumPts(char dep) //OC18082018
+	{//To add dependence on type of intensity when/if it is extended to mutual intensity and related charact.
+		long long resNp = 0;
+		if(dep == 0) resNp = ne;
+		else if(dep == 1) resNp = nx;
+		else if(dep == 2) resNp = nz;
+		else if(dep == 3) resNp = ((long long)nx)*((long long)nz);
+		else if(dep == 4) resNp = ((long long)ne)*((long long)nx);
+		else if(dep == 5) resNp = ((long long)ne)*((long long)nz);
+		else if(dep == 6) resNp = ((long long)ne)*((long long)nx)*((long long)nz);
+		return resNp;
 	}
 
 	void DeleteElecFieldArrays()

@@ -234,6 +234,19 @@ CErrWarn::CErrWarn()
 	error.push_back("Failed to interpolate electric field.\0"); //#178
 
 	error.push_back("Incorrect or insufficient parameters for magnetic field calculation.\0"); //#179
+	error.push_back("Incorrect input parameters for FFT procedure.\0"); //#180
+	error.push_back("Incorrect input parameters for convolution with Gaussian.\0"); //#181
+	error.push_back("Incorrect input parameters for conversion of tabulated magnetic field to periodic.\0"); //#182
+	error.push_back("Incorrect spherical mirror parameter: radius should not be zero.\0"); //#183
+	error.push_back("Incorrect crystal parameter: use case is not supported.\0"); //#184
+	error.push_back("Incorrect input parameters for search of indexes of undulator gap and phase values requiired for undulator field interpolation based on gap and phase.\0"); //#185
+	error.push_back("Incorrect or insufficient parameters for spherical wave electric field calculation.\0"); //#186
+	
+	error.push_back("Failed to determine array element index for interpolation.\0"); //#187
+	error.push_back("Failed to allocate array in front-end / client environment.\0"); //#188
+	error.push_back("Mutual intensity can not be extracted for these input parameters.\0"); //#189
+	error.push_back("Incorrect input parameters for calculation of statistical characteristics of intensity.\0"); //#190
+	error.push_back("Incorrect input parameters for processing intensity distributions.\0"); //#191
 
 //};
 
@@ -250,7 +263,7 @@ CErrWarn::CErrWarn()
 	warning.push_back("Emission conditions do not match well the wiggler case. The resulting precision may be poor.");
 	warning.push_back("Unable to extract the Multi-electron radiation component. Single-electron component was extracted.");
 	warning.push_back("COMPUTATION WAS NOT PERFORMED and the result was set to 0 for some values of input parameters \r due to the following problem: Electron Trajectory passes too closely to the Observation Point.");
-	warning.push_back("Computation of terminating terms of radiation integrals WAS NOT PERFORMED for some values of input parameters \r due to the following problem: asymptotic expansion validity criterion is not satisfied. This may influence the final accuracy of the computation. \r One can try to fix the problem by modifying Magnetic Field definition range and/or Longitudinal Integration limits.");
+	warning.push_back("Computation of terminating terms of radiation integrals WAS NOT PERFORMED for some values of input parameters \r because asymptotic expansion validity criterion was not satisfied. This may influence the accuracy of the computation. \r One can try to fix the problem by modifying Magnetic Field definition range and/or Integration limits."); //don't make it longer!
 	warning.push_back("Too many particles requested. The number of particles was set to the default maximum value.");
 	warning.push_back("Same base for different loading. Variables are highly correlated.");
 	warning.push_back("Too many grid points. The number of grid points was set to the default maximum value.");

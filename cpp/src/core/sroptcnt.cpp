@@ -20,8 +20,14 @@
 #include "sroptgrat.h"
 #include "sroptgtr.h"
 #include "sropthck.h"
+#include "sroptang.h"
+#include "sroptcryst.h"
+#include "srradmnp.h"
 #include "auxparse.h"
 #include "srwlib.h"
+
+//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+//#include "stdio.h"
 
 //*************************************************************************
 
@@ -97,7 +103,9 @@ srTCompositeOptElem::srTCompositeOptElem(const SRWLOptC& opt)
 			char *sType = *t_arOptTypes;
 			if(strcmp(sType, "drift") == 0)
 			{
-				pOptElem = new srTDriftSpace(((SRWLOptD*)(*t_arOpt))->L); 
+				//pOptElem = new srTDriftSpace(((SRWLOptD*)(*t_arOpt))->L); 
+				SRWLOptD *p = (SRWLOptD*)(*t_arOpt);
+				pOptElem = new srTDriftSpace(p->L, p->treat); 
 			}
 			else if((strcmp(sType, "aperture") == 0) || (strcmp(sType, "obstacle") == 0))
 			{
@@ -119,6 +127,16 @@ srTCompositeOptElem::srTCompositeOptElem(const SRWLOptC& opt)
 				SRWLOptL *p = (SRWLOptL*)(*t_arOpt);
 				pOptElem = new srTThinLens(p->Fx, p->Fy, p->x, p->y);
 			}
+			else if(strcmp(sType, "angle") == 0)
+			{
+				SRWLOptAng *p = (SRWLOptAng*)(*t_arOpt);
+				pOptElem = new srTOptAngle(p->AngX, p->AngY);
+			}
+			else if(strcmp(sType, "shift") == 0)
+			{
+				SRWLOptShift *p = (SRWLOptShift*)(*t_arOpt);
+				pOptElem = new srTOptShift(p->ShiftX, p->ShiftY);
+			}
 			else if((strcmp(sType, "zp") == 0) || (strcmp(sType, "ZP") == 0))
 			{
 				SRWLOptZP *p = (SRWLOptZP*)(*t_arOpt);
@@ -129,28 +147,31 @@ srTCompositeOptElem::srTCompositeOptElem(const SRWLOptC& opt)
 				SRWLOptWG *p = (SRWLOptWG*)(*t_arOpt);
 				pOptElem = new srTWaveguideRect(p->L, p->Dx, p->Dy, p->x, p->y); 
 			}
-			else if(strcmp(sType, "grating") == 0)
-			{
-				SRWLOptG *p = (SRWLOptG*)(*t_arOpt);
-				pOptElem = new srTGrating(p->grDen, p->disPl, p->ang, p->m, p->refl);
-			}
-			else if(strcmp(sType, "transmission") == 0)
-			{
-				pOptElem = new srTGenTransmission(*((SRWLOptT*)(*t_arOpt)));
-			}
-			else if(strcmp(sType, "mirror: ellipsoid") == 0)
-			{
-				pOptElem = new srTMirrorEllipsoid(*((SRWLOptMirEl*)(*t_arOpt)));
-			}
-			else if(strcmp(sType, "mirror: toroid") == 0)
-			{
-				pOptElem = new srTMirrorToroid(*((SRWLOptMirTor*)(*t_arOpt)));
-			}
+			else if(strcmp(sType, "transmission") == 0) pOptElem = new srTGenTransmission(*((SRWLOptT*)(*t_arOpt)));
+			else if(strncmp(sType, "mirror", 6) == 0) pOptElem = srTMirror::DefineMirror(sType, *t_arOpt);
+			else if(strcmp(sType, "grating") == 0) pOptElem = srTMirror::DefineGrating(sType, *t_arOpt);
 
-			else if(strcmp(sType, "container") == 0)
-			{
-				pOptElem = new srTCompositeOptElem(*((SRWLOptC*)(*t_arOpt)));
-			}
+			//else if(strcmp(sType, "mirror: plane") == 0)
+			//{
+			//	pOptElem = new srTMirrorPlane(*((SRWLOptMirPl*)(*t_arOpt)));
+			//}
+			//else if(strcmp(sType, "mirror: ellipsoid") == 0)
+			//{
+			//	pOptElem = new srTMirrorEllipsoid(*((SRWLOptMirEl*)(*t_arOpt)));
+			//}
+			//else if(strcmp(sType, "mirror: toroid") == 0)
+			//{
+			//	pOptElem = new srTMirrorToroid(*((SRWLOptMirTor*)(*t_arOpt)));
+			//}
+			//else if(strcmp(sType, "grating") == 0)
+			//{
+			//	SRWLOptG *p = (SRWLOptG*)(*t_arOpt);
+			//	//pOptElem = new srTGrating(p->grDen, p->disPl, p->ang, p->m, p->refl);
+			//	//pOptElem = new srTGrating(p->grDen, p->disPl, p->ang, p->m, p->refl, p->grDen1, p->grDen2, p->grDen3, p->grDen4);
+			//}
+
+			else if(strcmp(sType, "crystal") == 0) pOptElem = new srTOptCryst(*((SRWLOptCryst*)(*t_arOpt)));
+			else if(strcmp(sType, "container") == 0) pOptElem = new srTCompositeOptElem(*((SRWLOptC*)(*t_arOpt)));
 			else throw UNKNOWN_OPTICAL_ELEMENT;
 		}
 		if(pOptElem != 0)
@@ -164,6 +185,9 @@ srTCompositeOptElem::srTCompositeOptElem(const SRWLOptC& opt)
 			//if((i > 0) && (i < opt.nElem) && (i >= opt.nProp) && propResWasSet) propRes = propResLast;
 			if(i < opt.nProp)
 			{
+				char curNumPropPar = 9;
+				if(opt.arPropN != 0) curNumPropPar = opt.arPropN[i];
+
 				double *t_pr = *t_arProp;
 				propRes.propAutoResizeBefore((int)(t_pr[0]));
 				propRes.propAutoResizeAfter((int)(t_pr[1]));
@@ -174,9 +198,15 @@ srTCompositeOptElem::srTCompositeOptElem(const SRWLOptC& opt)
 				propRes.pxd = t_pr[6];
 				propRes.pzm = t_pr[7];
 				propRes.pzd = t_pr[8];
-				propRes.ShiftTypeBeforeRes = (char)t_pr[9];
-				propRes.xCenShift = t_pr[10];
-				propRes.zCenShift = t_pr[11];
+				if(curNumPropPar > 9) propRes.ShiftTypeBeforeRes = (char)t_pr[9];
+				if(curNumPropPar > 10) propRes.xCenShift = t_pr[10];
+				if(curNumPropPar > 11) propRes.zCenShift = t_pr[11];
+
+				if(curNumPropPar > 12) propRes.vLxOut = t_pr[12]; //Default coordinates of the output Optical Axis vector
+				if(curNumPropPar > 13) propRes.vLyOut = t_pr[13];
+				if(curNumPropPar > 14) propRes.vLzOut = t_pr[14];
+				if(curNumPropPar > 15) propRes.vHxOut = t_pr[15]; //Default coordinates of the Horizontal Base vector of the output frame
+				if(curNumPropPar > 16) propRes.vHyOut = t_pr[16];
 			}
 
 			GenOptElemPropResizeVect.push_back(propRes); //define instructions for propagation/resizing
@@ -220,14 +250,27 @@ int srTCompositeOptElem::PropagateRadiationTest(srTSRWRadStructAccessData* pInRa
 
 //*************************************************************************
 
-int srTCompositeOptElem::PropagateRadiationGuided(srTSRWRadStructAccessData& wfr)
+int srTCompositeOptElem::PropagateRadiationGuided(srTSRWRadStructAccessData& wfr, int nInt, char** arID, SRWLRadMesh* arIM, char** arI) //OC15082018
+//int srTCompositeOptElem::PropagateRadiationGuided(srTSRWRadStructAccessData& wfr)
 {
+	//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+	//double start,start1;
+	//get_walltime(&start);
+	//get_walltime(&start1);
+
 	int numElem = (int)GenOptElemList.size();
 	int numResizeInst = (int)GenOptElemPropResizeVect.size();
 	const double tolRes = 1.e-04;
 	int res = 0, elemCount = 0;
+
+	bool propIntIsNeeded = (nInt != 0) && (arID != 0) && (arI != 0); //OC27082018
+
 	for(srTGenOptElemHndlList::iterator it = GenOptElemList.begin(); it != GenOptElemList.end(); ++it)
 	{
+		//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+		//srwlPrintTime("PropagateRadiationGuided: start iteration",&start1);
+		//srwlPrintTime("PropagateRadiationGuided: start iteration",&start);
+
 		int methNo = 0;
 		int useResizeBefore = 0;
 		int useResizeAfter = 0;
@@ -235,11 +278,25 @@ int srTCompositeOptElem::PropagateRadiationGuided(srTSRWRadStructAccessData& wfr
 		double underSampThresh = 0.5; //not user
 		char analTreatment = 0;
 
+		double vLxO=0, vLyO=0, vLzO=0; //Coordinates of the output Optical Axis vector
+		double vHxO=0, vHyO=0; //Default coordinates of the Horizontal Base vector of the output frame
+
+		//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+		//srwlPrintTime("Iteration: set params",&start);
+
 		if(elemCount < numResizeInst)
 		{
 			srTRadResize &curPropResizeInst = GenOptElemPropResizeVect[elemCount];
 			useResizeBefore = curPropResizeInst.propAutoResizeBefore();
+
+			//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+			//srwlPrintTime("Iteration: propAutoResizeBefore",&start);
+
 			useResizeAfter = curPropResizeInst.propAutoResizeAfter();
+
+			//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+			//srwlPrintTime("Iteration: propAutoResizeAfter",&start);
+
 			if(useResizeBefore || useResizeAfter) methNo = 2;
 
 			precFact = curPropResizeInst.PropAutoPrec;
@@ -250,25 +307,105 @@ int srTCompositeOptElem::PropagateRadiationGuided(srTSRWRadStructAccessData& wfr
 			if((::fabs(curPropResizeInst.pxd - 1.) > tolRes) || (::fabs(curPropResizeInst.pxm - 1.) > tolRes) ||
 			   (::fabs(curPropResizeInst.pzd - 1.) > tolRes) || (::fabs(curPropResizeInst.pzm - 1.) > tolRes))
 				if(res = RadResizeGen(wfr, curPropResizeInst)) return res;
+
+			//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+			//srwlPrintTime("Iteration: RadResizeGen",&start);
+
+			vLxO = curPropResizeInst.vLxOut; //OC021213
+			vLyO = curPropResizeInst.vLyOut;
+			vLzO = curPropResizeInst.vLzOut;
+			vHxO = curPropResizeInst.vHxOut;
+			vHyO = curPropResizeInst.vHyOut;
 		}
 
-		srTParPrecWfrPropag precParWfrPropag(methNo, useResizeBefore, useResizeAfter, precFact, underSampThresh, analTreatment);
+		srTParPrecWfrPropag precParWfrPropag(methNo, useResizeBefore, useResizeAfter, precFact, underSampThresh, analTreatment, (char)0, vLxO, vLyO, vLzO, vHxO, vHyO);
+
+		//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+		//srwlPrintTime("Iteration: precParWfrPropag",&start);
+
 		srTRadResizeVect auxResizeVect;
 		if(res = ((srTGenOptElem*)(it->rep))->PropagateRadiation(&wfr, precParWfrPropag, auxResizeVect)) return res;
 		//maybe to use "PropagateRadiationGuided" for srTCompositeOptElem?
 
+		//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+		//srwlPrintTime("Iteration: PropagateRadiation",&start);
+
+		if(propIntIsNeeded) ExtractPropagatedIntensity(wfr, nInt, arID, arIM, arI, elemCount);
+
 		elemCount++;
+
+		//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+		//char str[256];
+		//sprintf(str,"%s %d","PropagateRadiationGuided: Iteration :",elemCount);
+		//srwlPrintTime(str,&start1);
 	}
 	if(elemCount < numResizeInst)
 	{//post-resize
 		//TO IMPLEMENT: eventual shift of wavefront before resizing!!!
 
 		srTRadResize &postResize = GenOptElemPropResizeVect[elemCount];
+
+		//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+		//srwlPrintTime("PropagateRadiationGuided: GenOptElemPropResizeVect",&start);
+
 		if((::fabs(postResize.pxd - 1.) > tolRes) || (::fabs(postResize.pxm - 1.) > tolRes) ||
 		   (::fabs(postResize.pzd - 1.) > tolRes) || (::fabs(postResize.pzm - 1.) > tolRes))
 			if(res = RadResizeGen(wfr, postResize)) return res;
+
+		if(propIntIsNeeded) ExtractPropagatedIntensity(wfr, nInt, arID, arIM, arI, elemCount); //OC29082018
+		//if(propIntIsNeeded) ExtractPropagatedIntensity(wfr, nInt, arID, arIM, arI, elemCount, nInt - 1);
 	}
 	return 0;
+}
+
+//*************************************************************************
+
+int srTCompositeOptElem::ExtractPropagatedIntensity(srTSRWRadStructAccessData& wfr, int nInt, char** arID, SRWLRadMesh* arIM, char** arI, int elCnt, int indIntSartSearch) //27082018
+{
+	if((nInt == 0) || (arID == 0) || (arI == 0)) return 0;
+	int res = 0;
+	int indInt = -1;
+	char *pID0 = *arID;
+	//char *tID0 = pID0;
+	char *tID0 = pID0 + indIntSartSearch;
+
+	for(int ii=indIntSartSearch; ii<nInt; ii++) 
+	{
+		if(elCnt == (int)(*(tID0++)) - 1)
+		{
+			char *&arCurI = *(arI + ii);
+			char pol = *(arID[1] + ii);
+			char type = *(arID[2] + ii);
+			char dep = *(arID[3] + ii);
+			char pres = *(arID[4] + ii);
+			SRWLRadMesh &mesh = *(arIM + ii);
+
+			if((nInt > 1) && (ii > 0))
+			{
+				if(pol < 0) pol = *(arID[1]);
+				if(type < 0) type = *(arID[2]);
+				if(dep < 0) dep = *(arID[3]);
+				if(pres < 0) pres = *(arID[4]);
+				if(mesh.ne < 0) mesh = *(arIM);
+			}
+
+			if(arCurI == 0)
+			{//Allocate memory for the intensity in the front-end via a function in srTSRWRadStructAccessData (which calculates amount of necessary memory based on type of intensity)
+				if(res = wfr.AllocExtIntArray(type, dep, arCurI)) return res; //OC18082018
+			}
+			//else //?
+				
+			//Extract the intensity (repeating how this is done in srwlCalcIntFromElecField)
+			CHGenObj hWfr(&wfr, true);
+			srTRadGenManip radGenManip(hWfr);
+			radGenManip.ExtractRadiationSRWL(pol, type, dep, pres, mesh.eStart, mesh.xStart, mesh.yStart, arCurI);
+
+			//Updating mesh for intensity with data from wavefront
+			wfr.GetIntMesh(dep, mesh);
+			//break; //OC29082018 (to enable intesity indexes in arbitrary order)
+		}
+	}
+	return res;
 }
 
 //*************************************************************************

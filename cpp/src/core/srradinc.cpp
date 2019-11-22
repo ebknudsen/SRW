@@ -54,17 +54,22 @@ int srTRadIntConst::ComputeTotalStokesDistr(srTStokesStructAccessData& StokesAcc
 	double zc = ConstTrjDatPtr->EbmDat.dzds0*(DistrInfoDat.yStart - ConstTrjDatPtr->EbmDat.s0) + ConstTrjDatPtr->EbmDat.z0;
 	double xTol = StokesAccessData.xStep*0.01, zTol = StokesAccessData.zStep*0.01; // To steer
 
-	long PerE = 4;
-	long PerX = StokesAccessData.ne*PerE;
-	long PerZ = StokesAccessData.nx*PerX;
+	//long PerE = 4;
+	//long PerX = StokesAccessData.ne*PerE;
+	//long PerZ = StokesAccessData.nx*PerX;
+	long long PerE = 4;
+	long long PerX = StokesAccessData.ne*PerE;
+	long long PerZ = StokesAccessData.nx*PerX;
 
 	EXZ.z = StokesAccessData.zStart;
 
-	long TotalAmOfOutPoints = DistrInfoDat.nz*DistrInfoDat.nx*DistrInfoDat.nLamb;
+	//long TotalAmOfOutPoints = DistrInfoDat.nz*DistrInfoDat.nx*DistrInfoDat.nLamb;
+	long long TotalAmOfOutPoints = ((long long)DistrInfoDat.nz)*((long long)DistrInfoDat.nx)*((long long)DistrInfoDat.nLamb);
 	if(FinalResAreSymOverX) TotalAmOfOutPoints >>= 1;
 	if(FinalResAreSymOverZ) TotalAmOfOutPoints >>= 1;
 
-	long PointCount = 0;
+	//long PointCount = 0;
+	long long PointCount = 0;
 	double UpdateTimeInt_s = 0.5;
 	srTCompProgressIndicator CompProgressInd(TotalAmOfOutPoints, UpdateTimeInt_s);
 
@@ -72,7 +77,8 @@ int srTRadIntConst::ComputeTotalStokesDistr(srTStokesStructAccessData& StokesAcc
 	{
 		if(FinalResAreSymOverZ) { if((EXZ.z - zc) > zTol) break;}
 
-		long izPerZ = iz*PerZ;
+		//long izPerZ = iz*PerZ;
+		long long izPerZ = iz*PerZ;
 		EXZ.x = StokesAccessData.xStart;
 		for(int ix=0; ix<DistrInfoDat.nx; ix++)
 		{
@@ -81,11 +87,12 @@ int srTRadIntConst::ComputeTotalStokesDistr(srTStokesStructAccessData& StokesAcc
 			PobsLocG.x = EXZ.x; PobsLocG.y = 0.; PobsLocG.z = EXZ.z;
 			PobsLocG = TrLab2Loc.TrPoint(PobsLocG);
 			
-			long ixPerX = ix*PerX;
+			//long ixPerX = ix*PerX;
+			long long ixPerX = ix*PerX;
 			EXZ.e = StokesAccessData.eStart;
 			for(int ie=0; ie<DistrInfoDat.nLamb; ie++)
 			{
-				float* pStokes = StokesAccessData.pBaseSto + izPerZ + ixPerX +ie*PerE;
+				float* pStokes = StokesAccessData.pBaseSto + (izPerZ + ixPerX +ie*PerE);
 				if(result = ComputeStokesAtPoint(pStokes)) return result;
 
 				if(result = srYield.Check()) return result;
@@ -183,15 +190,21 @@ void srTRadIntConst::AnalyzeFinalResultsSymmetry(char& FinalResAreSymOverX, char
 
 void srTRadIntConst::FillInSymPartsOfResults(char FinalResAreSymOverX, char FinalResAreSymOverZ, srTStokesStructAccessData& StokesAccessData)
 {
-	long PerX = StokesAccessData.ne << 2;
-	long PerZ = PerX*DistrInfoDat.nx;
+	//long PerX = StokesAccessData.ne << 2;
+	//long PerZ = PerX*DistrInfoDat.nx;
+	long long PerX = StokesAccessData.ne << 2;
+	long long PerZ = PerX*DistrInfoDat.nx;
+
 	char SymWithRespectToXax, SymWithRespectToZax;
 	
-	int HalfNz = StokesAccessData.nz >> 1, Nz_mi_1 = StokesAccessData.nz - 1;
+	//int HalfNz = StokesAccessData.nz >> 1, Nz_mi_1 = StokesAccessData.nz - 1;
+	long long HalfNz = StokesAccessData.nz >> 1, Nz_mi_1 = StokesAccessData.nz - 1; //OC26042019
 	//int izStart = ((HalfNz << 1) == StokesAccessData.nz)? HalfNz : (HalfNz + 1);
-	int HalfNx = StokesAccessData.nx >> 1, Nx_mi_1 = StokesAccessData.nx - 1;
+	//int HalfNx = StokesAccessData.nx >> 1, Nx_mi_1 = StokesAccessData.nx - 1;
+	long long HalfNx = StokesAccessData.nx >> 1, Nx_mi_1 = StokesAccessData.nx - 1; //OC26042019
 	//int ixStart = ((HalfNx << 1) == StokesAccessData.nx)? HalfNx : (HalfNx + 1);
-	int iz, ix;
+	//int iz, ix;
+	long long iz, ix; //OC26042019
 	
 	if(FinalResAreSymOverZ)
 	{
@@ -200,11 +213,12 @@ void srTRadIntConst::FillInSymPartsOfResults(char FinalResAreSymOverX, char Fina
 			SymWithRespectToXax = 0; SymWithRespectToZax = 1;
 			for(iz=0; iz<HalfNz; iz++)
 			{
-				long izPerZ = iz*PerZ;
+				//long izPerZ = iz*PerZ;
+				long long izPerZ = iz*PerZ;
 				for(ix=0; ix<HalfNx; ix++)
 				{
-					float* pOrigData = StokesAccessData.pBaseSto + izPerZ + ix*PerX;
-					float* pSymData = StokesAccessData.pBaseSto + izPerZ + (Nx_mi_1 - ix)*PerX;
+					float* pOrigData = StokesAccessData.pBaseSto + (izPerZ + ix*PerX);
+					float* pSymData = StokesAccessData.pBaseSto + (izPerZ + (Nx_mi_1 - ix)*PerX);
 					CopySymEnergySlice(pOrigData, pSymData, SymWithRespectToXax, SymWithRespectToZax);
 				}
 			}
@@ -212,12 +226,14 @@ void srTRadIntConst::FillInSymPartsOfResults(char FinalResAreSymOverX, char Fina
 		SymWithRespectToXax = 1; SymWithRespectToZax = 0;
 		for(iz=0; iz<HalfNz; iz++)
 		{
-			long izPerZ = iz*PerZ, BufZ = (Nz_mi_1 - iz)*PerZ;
+			//long izPerZ = iz*PerZ, BufZ = (Nz_mi_1 - iz)*PerZ;
+			long long izPerZ = iz*PerZ, BufZ = (Nz_mi_1 - iz)*PerZ;
 			for(ix=0; ix<DistrInfoDat.nx; ix++)
 			{
-				long ixPerX = ix*PerX;
-				float* pOrigData = StokesAccessData.pBaseSto + izPerZ + ixPerX;
-				float* pSymData = StokesAccessData.pBaseSto + BufZ + ixPerX;
+				//long ixPerX = ix*PerX;
+				long long ixPerX = ix*PerX;
+				float* pOrigData = StokesAccessData.pBaseSto + (izPerZ + ixPerX);
+				float* pSymData = StokesAccessData.pBaseSto + (BufZ + ixPerX);
 				CopySymEnergySlice(pOrigData, pSymData, SymWithRespectToXax, SymWithRespectToZax);
 			}
 		}
@@ -227,11 +243,12 @@ void srTRadIntConst::FillInSymPartsOfResults(char FinalResAreSymOverX, char Fina
 		SymWithRespectToXax = 0; SymWithRespectToZax = 1;
 		for(iz=0; iz<DistrInfoDat.nz; iz++)
 		{
-			long izPerZ = iz*PerZ;
+			//long izPerZ = iz*PerZ;
+			long long izPerZ = iz*PerZ;
 			for(ix=0; ix<HalfNx; ix++)
 			{
-				float* pOrigData = StokesAccessData.pBaseSto + izPerZ + ix*PerX;
-				float* pSymData = StokesAccessData.pBaseSto + izPerZ + (Nx_mi_1 - ix)*PerX;
+				float* pOrigData = StokesAccessData.pBaseSto + (izPerZ + ix*PerX);
+				float* pSymData = StokesAccessData.pBaseSto + (izPerZ + (Nx_mi_1 - ix)*PerX);
 				CopySymEnergySlice(pOrigData, pSymData, SymWithRespectToXax, SymWithRespectToZax);
 			}
 		}
@@ -318,7 +335,8 @@ int srTRadIntConst::TreatFiniteElecBeamEmittance(srTStokesStructAccessData& Stok
 	int result;
 	if((StokesAccessData.nx == 1) && (StokesAccessData.nz == 1)) return 0;
 
-	long LenFloatArr = (StokesAccessData.nx*StokesAccessData.nz);
+	//long LenFloatArr = (StokesAccessData.nx*StokesAccessData.nz);
+	long long LenFloatArr = ((long long)StokesAccessData.nx)*((long long)StokesAccessData.nz);
 	float *StokesCmpnArr = new float[LenFloatArr];
 	if(StokesCmpnArr == 0) return MEMORY_ALLOCATION_FAILURE;
 
@@ -350,21 +368,27 @@ int srTRadIntConst::TreatFiniteElecBeamEmittance(srTStokesStructAccessData& Stok
 void srTRadIntConst::ExtractStokesSliceConstE(srTStokesStructAccessData& StokesAccessData, long ie, int StokesNo, float* pOutS)
 {
 	float *pS0 = StokesAccessData.pBaseSto + StokesNo;
-	long PerX = StokesAccessData.ne << 2;
-	long PerZ = PerX*StokesAccessData.nx;
+	//long PerX = StokesAccessData.ne << 2;
+	//long PerZ = PerX*StokesAccessData.nx;
+	long long PerX = StokesAccessData.ne << 2;
+	long long PerZ = PerX*StokesAccessData.nx;
 
-	long izPerZ = 0;
-	long iePerE = ie << 2;
+	//long izPerZ = 0;
+	//long iePerE = ie << 2;
+	long long izPerZ = 0;
+	long long iePerE = ie << 2;
 
 	float *tOutS = pOutS;
 	for(int iz=0; iz<StokesAccessData.nz; iz++)
 	{
 		float *pS_StartForX = pS0 + izPerZ;
-		long ixPerX = 0;
+		//long ixPerX = 0;
+		long long ixPerX = 0;
 
 		for(int ix=0; ix<StokesAccessData.nx; ix++)
 		{
-			long ixPerX_p_iePerE = ixPerX + iePerE;
+			//long ixPerX_p_iePerE = ixPerX + iePerE;
+			long long ixPerX_p_iePerE = ixPerX + iePerE;
 			float *pS = pS_StartForX + ixPerX_p_iePerE;
 			*(tOutS++) = *pS;
 
@@ -380,21 +404,27 @@ void srTRadIntConst::UpdateStokesSliceConstE(float* StokesCmpnArr, long ie, int 
 {
 	float *pS0 = StokesAccessData.pBaseSto + StokesNo;
 
-	long PerX = StokesAccessData.ne << 2;
-	long PerZ = PerX*StokesAccessData.nx;
+	//long PerX = StokesAccessData.ne << 2;
+	//long PerZ = PerX*StokesAccessData.nx;
+	long long PerX = StokesAccessData.ne << 2;
+	long long PerZ = PerX*StokesAccessData.nx;
 
-	long izPerZ = 0;
-	long iePerE = ie << 2;
+	//long izPerZ = 0;
+	//long iePerE = ie << 2;
+	long long izPerZ = 0;
+	long long iePerE = ie << 2;
 
 	float *tCmpn = StokesCmpnArr;
 	for(int iz=0; iz<StokesAccessData.nz; iz++)
 	{
 		float *pS_StartForX = pS0 + izPerZ;
-		long ixPerX = 0;
+		//long ixPerX = 0;
+		long long ixPerX = 0;
 
 		for(int ix=0; ix<StokesAccessData.nx; ix++)
 		{
-			long ixPerX_p_iePerE = ixPerX + iePerE;
+			//long ixPerX_p_iePerE = ixPerX + iePerE;
+			long long ixPerX_p_iePerE = ixPerX + iePerE;
 			float *pS = pS_StartForX + ixPerX_p_iePerE;
 			*pS = *(tCmpn++);
 
@@ -422,7 +452,9 @@ int srTRadIntConst::TreatFiniteElecBeamEmittanceOneComp1D(float* CmpnArr, double
 	DetermineResizeBeforeConv1D(M_ElecEff, M_DistrSingleE, VsXorZ, Resize);
 
 	long Np = (VsXorZ == 'x')? DistrInfoDat.nx : DistrInfoDat.nz;
+	//long long Np = (VsXorZ == 'x')? DistrInfoDat.nx : DistrInfoDat.nz; //OC26042019
 	long NpAux = (long)(Resize.pm*Np);
+	//long long NpAux = (long long)(Resize.pm*Np); //OC26042019
 
 	CGenMathFFT1D FFT;
 	FFT.NextCorrectNumberForFFT(NpAux);
@@ -442,7 +474,8 @@ int srTRadIntConst::TreatFiniteElecBeamEmittanceOneComp1D(float* CmpnArr, double
 
 void srTRadIntConst::DetermineSingleElecDistrEffSizes1D(float* CmpnArr, char VsXorZ, double& M_Cen)
 {
-	long Np;
+	//long Np;
+	long long Np; //OC26042019
 	double Step, Arg;
 	if(VsXorZ == 'x') 
 	{
@@ -456,7 +489,8 @@ void srTRadIntConst::DetermineSingleElecDistrEffSizes1D(float* CmpnArr, char VsX
 		Step = (DistrInfoDat.nz > 1)? (DistrInfoDat.zEnd - DistrInfoDat.zStart)/(DistrInfoDat.nz - 1) : 0.;
 		Arg = DistrInfoDat.zStart;
 	}
-	long Np_mi_1 = Np - 1;
+	//long Np_mi_1 = Np - 1;
+	long long Np_mi_1 = Np - 1; //OC26042019
 	float Sm0 = 0., Sm1 = 0., Sm2 = 0.;
 	float *tDistr = CmpnArr;
 	//float ArgE2 = (float)(Arg*Arg);
@@ -496,11 +530,13 @@ void srTRadIntConst::DetermineResizeBeforeConv1D(double M_ElecEff, double M_Dist
 
 //*************************************************************************
 
-void srTRadIntConst::ConstructDataForConv1D(float* CmpnArr, float* AuxConvData, long NpOld, long NpNew)
+void srTRadIntConst::ConstructDataForConv1D(float* CmpnArr, float* AuxConvData, long long NpOld, long long NpNew) //OC26042019
+//void srTRadIntConst::ConstructDataForConv1D(float* CmpnArr, float* AuxConvData, long NpOld, long NpNew)
 {
-	long iDat = (NpNew - NpOld) >> 1;
-
-	long i;
+	//long iDat = (NpNew - NpOld) >> 1;
+	long long iDat = (NpNew - NpOld) >> 1; //OC26042019
+	//long i;
+	long long i; //OC26042019
 	float V = *CmpnArr;
 	float *tNew = AuxConvData;
 	for(i=0; i<iDat; i++)
@@ -522,6 +558,7 @@ void srTRadIntConst::ConstructDataForConv1D(float* CmpnArr, float* AuxConvData, 
 //*************************************************************************
 
 int srTRadIntConst::PerformConvolutionWithGaussian1D(float* ConvData, long NewNp, double M_ElecEff, char VsXorZ)
+//int srTRadIntConst::PerformConvolutionWithGaussian1D(float* ConvData, long long NewNp, double M_ElecEff, char VsXorZ)
 {
 	int result;
 	const double Pi = 3.14159265358979;
@@ -531,7 +568,8 @@ int srTRadIntConst::PerformConvolutionWithGaussian1D(float* ConvData, long NewNp
 	double Step = (VsXorZ == 'x')? (DistrInfoDat.xEnd - DistrInfoDat.xStart)/(DistrInfoDat.nx - 1) : (DistrInfoDat.zEnd - DistrInfoDat.zStart)/(DistrInfoDat.nz - 1);
 	double StartFict = -Step*(NewNp >> 1);
 
-	long TwoNewNp = NewNp << 1;
+	//long TwoNewNp = NewNp << 1;
+	long long TwoNewNp = NewNp << 1; //OC26042019
 	float* AuxData = new float[TwoNewNp];
 	if(AuxData == 0) return MEMORY_ALLOCATION_FAILURE;
 
@@ -575,13 +613,16 @@ int srTRadIntConst::PerformConvolutionWithGaussian1D(float* ConvData, long NewNp
 
 //*************************************************************************
 
-void srTRadIntConst::ExtractDataAfterConv1D(float* AuxConvData, long NpAux, long Np, float* CmpnArr)
+void srTRadIntConst::ExtractDataAfterConv1D(float* AuxConvData, long long NpAux, long long Np, float* CmpnArr) //OC26042019
+//void srTRadIntConst::ExtractDataAfterConv1D(float* AuxConvData, long NpAux, long Np, float* CmpnArr)
 {
-	long iDat = (NpAux - Np) >> 1;
+	//long iDat = (NpAux - Np) >> 1;
+	long long iDat = (NpAux - Np) >> 1; //OC26042019
 
 	float *tCmpn = CmpnArr;
 	float *tAux = AuxConvData + (iDat << 1);
-	for(long i=0; i<Np; i++)
+	for(long long i=0; i<Np; i++) //OC26042019
+	//for(long i=0; i<Np; i++)
 	{
 		*(tCmpn++) = *tAux; tAux += 2;
 	}
@@ -602,10 +643,13 @@ int srTRadIntConst::TreatFiniteElecBeamEmittanceOneComp2D(float* CmpnArr, double
 
 	long NxAux = (long)(Resize.pxm*DistrInfoDat.nx);
 	long NzAux = (long)(Resize.pzm*DistrInfoDat.nz);
+	//long long NxAux = (long long)(Resize.pxm*DistrInfoDat.nx); //OC26042019
+	//long long NzAux = (long long)(Resize.pzm*DistrInfoDat.nz);
 	CGenMathFFT2D FFT;
 	FFT.NextCorrectNumberForFFT(NxAux);
 	FFT.NextCorrectNumberForFFT(NzAux);
-	float* AuxConvData = new float[NxAux*NzAux << 1];
+	long long NxAux_NzAux_2 = ((long long)NxAux * (long long)NzAux) << 1; //OC28042019
+	float* AuxConvData = new float[NxAux_NzAux_2];
 	if(AuxConvData == 0) return MEMORY_ALLOCATION_FAILURE;
 
 	ConstructDataForConv2D(CmpnArr, AuxConvData, NxAux, NzAux);
@@ -624,20 +668,23 @@ void srTRadIntConst::DetermineSingleElecDistrEffSizes2D(float* CmpnArr, double& 
 	float Sm0 = 0., SmX = 0., SmZ = 0., SmXX = 0., SmZZ = 0.;
 	float xStep = (float)((DistrInfoDat.nx > 1)? (DistrInfoDat.xEnd - DistrInfoDat.xStart)/(DistrInfoDat.nx - 1) : 0.);
 	float zStep = (float)((DistrInfoDat.nz > 1)? (DistrInfoDat.zEnd - DistrInfoDat.zStart)/(DistrInfoDat.nz - 1) : 0.);
-	long nz_mi_1 = DistrInfoDat.nz - 1, nx_mi_1 = DistrInfoDat.nx - 1;
+	//long nz_mi_1 = DistrInfoDat.nz - 1, nx_mi_1 = DistrInfoDat.nx - 1;
+	long long nz_mi_1 = DistrInfoDat.nz - 1, nx_mi_1 = DistrInfoDat.nx - 1; //OC26042019
 
 	float *tDistr = CmpnArr;
 	float z = (float)DistrInfoDat.zStart;
 	float ze2 = z*z;
 	float wz = 0.5;
 
-	for(int iz=0; iz<DistrInfoDat.nz; iz++)
+	for(long long iz=0; iz<DistrInfoDat.nz; iz++) //OC26042019
+	//for(int iz=0; iz<DistrInfoDat.nz; iz++)
 	{
 		if(iz == nz_mi_1) wz = 0.5;
 		
 		float x = (float)DistrInfoDat.xStart;
 		float xe2 = x*x;
-		for(int ix=0; ix<DistrInfoDat.nx; ix++)
+		for(long long ix=0; ix<DistrInfoDat.nx; ix++) //OC26042019
+		//for(int ix=0; ix<DistrInfoDat.nx; ix++)
 		{
 			float Distr = (float)::fabs(wz*(*(tDistr++)));
 			if((ix == nx_mi_1) || (iz == nz_mi_1)) Distr *= 0.5;
@@ -686,37 +733,44 @@ void srTRadIntConst::DetermineResizeBeforeConv2D(double MxxElecEff, double MzzEl
 
 //*************************************************************************
 
-void srTRadIntConst::ConstructDataForConv2D(float* CmpnArr, float* NewData, long NewNx, long NewNz)
+void srTRadIntConst::ConstructDataForConv2D(float* CmpnArr, float* NewData, long long NewNx, long long NewNz) //OC26042019
+//void srTRadIntConst::ConstructDataForConv2D(float* CmpnArr, float* NewData, long NewNx, long NewNz)
 {
-	long ixDat = (NewNx - DistrInfoDat.nx) >> 1;
-	long izDat = (NewNz - DistrInfoDat.nz) >> 1;
-	long OffsetXp = ixDat + DistrInfoDat.nx;
-	long OffsetZp = izDat + DistrInfoDat.nz;
+	//long ixDat = (NewNx - DistrInfoDat.nx) >> 1;
+	//long izDat = (NewNz - DistrInfoDat.nz) >> 1;
+	//long OffsetXp = ixDat + DistrInfoDat.nx;
+	//long OffsetZp = izDat + DistrInfoDat.nz;
+	long long ixDat = (NewNx - DistrInfoDat.nx) >> 1; //OC26042019
+	long long izDat = (NewNz - DistrInfoDat.nz) >> 1;
+	long long OffsetXp = ixDat + DistrInfoDat.nx;
+	long long OffsetZp = izDat + DistrInfoDat.nz;
 
-	long NewPerZ = NewNx << 1;
-	long ix, iz;
+	//long NewPerZ = NewNx << 1;
+	long long NewPerZ = NewNx << 1;
+	//long ix, iz;
+	long long ix, iz; //OC26042019
 	float V = *CmpnArr;
 	for(iz=0; iz<izDat; iz++)
 	{
-		float *tNew = NewData + iz*NewPerZ;
+		float *tNew = NewData + (iz*NewPerZ);
 		for(ix=0; ix<ixDat; ix++) { *(tNew++) = V; *(tNew++) = 0;}
 	}
 	V = *(CmpnArr + DistrInfoDat.nx - 1);
 	for(iz=0; iz<izDat; iz++)
 	{
-		float *tNew = NewData + iz*NewPerZ + (OffsetXp << 1);
+		float *tNew = NewData + (iz*NewPerZ + (OffsetXp << 1));
 		for(ix=OffsetXp; ix<NewNx; ix++) { *(tNew++) = V; *(tNew++) = 0;}
 	}
 	V = *(CmpnArr + (DistrInfoDat.nz - 1)*DistrInfoDat.nx);
 	for(iz=OffsetZp; iz<NewNz; iz++)
 	{
-		float *tNew = NewData + iz*NewPerZ;
+		float *tNew = NewData + (iz*NewPerZ);
 		for(ix=0; ix<ixDat; ix++) { *(tNew++) = V; *(tNew++) = 0;}
 	}
 	V = *(CmpnArr + DistrInfoDat.nz*DistrInfoDat.nx - 1);
 	for(iz=OffsetZp; iz<NewNz; iz++)
 	{
-		float *tNew = NewData + iz*NewPerZ + (OffsetXp << 1);
+		float *tNew = NewData + (iz*NewPerZ + (OffsetXp << 1));
 		for(ix=OffsetXp; ix<NewNx; ix++) { *(tNew++) = V; *(tNew++) = 0;}
 	}
 
@@ -725,19 +779,21 @@ void srTRadIntConst::ConstructDataForConv2D(float* CmpnArr, float* NewData, long
 	for(iz=izDat; iz<(izDat + DistrInfoDat.nz); iz++)
 	{
 		V = *tOldL;
-		long izNewPerZ = iz*NewPerZ;
+		//long izNewPerZ = iz*NewPerZ;
+		long long izNewPerZ = iz*NewPerZ;
 		float *tNew = NewData + izNewPerZ;
 		for(ix=0; ix<ixDat; ix++) { *(tNew++) = V; *(tNew++) = 0;}
 		tOldL += DistrInfoDat.nx;
 
 		V = *tOldR;
-		tNew = NewData + izNewPerZ + (OffsetXp << 1);
+		tNew = NewData + (izNewPerZ + (OffsetXp << 1));
 		for(ix=OffsetXp; ix<NewNx; ix++) { *(tNew++) = V; *(tNew++) = 0;}
 		tOldR += DistrInfoDat.nx;
 	}
 
 	float *tOldD = CmpnArr;
-	float *tOldU = CmpnArr + (DistrInfoDat.nz - 1)*DistrInfoDat.nx;
+	//float *tOldU = CmpnArr + (DistrInfoDat.nz - 1)*DistrInfoDat.nx;
+	float *tOldU = CmpnArr + (((long long)(DistrInfoDat.nz - 1))*((long long)DistrInfoDat.nx));
 	for(ix=ixDat; ix<(ixDat + DistrInfoDat.nx); ix++)
 	{
 		V = *(tOldD++);
@@ -745,14 +801,14 @@ void srTRadIntConst::ConstructDataForConv2D(float* CmpnArr, float* NewData, long
 		for(iz=0; iz<izDat; iz++) { *tNew = V; *(tNew+1) = 0; tNew += NewPerZ;}
 
 		V = *(tOldU++);
-		tNew = NewData + OffsetZp*NewPerZ + (ix << 1);
+		tNew = NewData + (OffsetZp*NewPerZ + (ix << 1));
 		for(iz=OffsetZp; iz<NewNz; iz++) { *tNew = V; *(tNew+1) = 0; tNew += NewPerZ;}
 	}
 
 	float *tOld = CmpnArr;
 	for(iz=izDat; iz<(izDat + DistrInfoDat.nz); iz++)
 	{
-		float *tNew = NewData + iz*NewPerZ + (ixDat << 1);
+		float *tNew = NewData + (iz*NewPerZ + (ixDat << 1));
 		for(ix=ixDat; ix<(ixDat + DistrInfoDat.nx); ix++)
 		{
 			*(tNew++) = *(tOld++); *(tNew++) = 0.;
@@ -763,6 +819,7 @@ void srTRadIntConst::ConstructDataForConv2D(float* CmpnArr, float* NewData, long
 //*************************************************************************
 
 int srTRadIntConst::PerformConvolutionWithGaussian2D(float* ConvData, long NewNx, long NewNz, double MxxElecEff, double MzzElecEff)
+//int srTRadIntConst::PerformConvolutionWithGaussian2D(float* ConvData, long long NewNx, long long NewNz, double MxxElecEff, double MzzElecEff)
 {
 	int result;
 	double xStep = (DistrInfoDat.nx > 1)? (DistrInfoDat.xEnd - DistrInfoDat.xStart)/(DistrInfoDat.nx - 1) : 0.;
@@ -824,18 +881,26 @@ int srTRadIntConst::PerformConvolutionWithGaussian2D(float* ConvData, long NewNx
 
 //*************************************************************************
 
-void srTRadIntConst::ExtractDataAfterConv2D(float* AuxConvData, long NxAux, long NzAux, float* CmpnArr)
+void srTRadIntConst::ExtractDataAfterConv2D(float* AuxConvData, long long NxAux, long long NzAux, float* CmpnArr) //OC26042019
+//void srTRadIntConst::ExtractDataAfterConv2D(float* AuxConvData, long NxAux, long NzAux, float* CmpnArr)
 {
-	long ixDat = (NxAux - DistrInfoDat.nx) >> 1;
-	long izDat = (NzAux - DistrInfoDat.nz) >> 1;
-	long Two_ixDat = ixDat << 1;
-	long AuxPerZ = NxAux << 1;
+	//long ixDat = (NxAux - DistrInfoDat.nx) >> 1;
+	//long izDat = (NzAux - DistrInfoDat.nz) >> 1;
+	//long Two_ixDat = ixDat << 1;
+	long long ixDat = (NxAux - DistrInfoDat.nx) >> 1; //OC26042019
+	long long izDat = (NzAux - DistrInfoDat.nz) >> 1;
+	long long Two_ixDat = ixDat << 1;
+	//long AuxPerZ = NxAux << 1;
+	long long AuxPerZ = NxAux << 1;
 
 	float *tCmpn = CmpnArr;
-	for(long iz=0; iz<DistrInfoDat.nz; iz++)
+	for(long long iz=0; iz<DistrInfoDat.nz; iz++) //OC26042019
+	//for(long iz=0; iz<DistrInfoDat.nz; iz++)
 	{
-		float *tAux = AuxConvData + (izDat + iz)*AuxPerZ + Two_ixDat;
-		for(long ix=0; ix<DistrInfoDat.nx; ix++)
+		//float *tAux = AuxConvData + (izDat + iz)*AuxPerZ + Two_ixDat;
+		float *tAux = AuxConvData + ((izDat + iz)*AuxPerZ + Two_ixDat);
+		for(long long ix=0; ix<DistrInfoDat.nx; ix++) //OC26042019
+		//for(long ix=0; ix<DistrInfoDat.nx; ix++)
 		{
 			*(tCmpn++) = *tAux; tAux += 2;
 		}

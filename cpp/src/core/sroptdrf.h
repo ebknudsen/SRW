@@ -21,6 +21,10 @@
 #include "srerror.h"
 #endif
 
+//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+//#include <stdio.h>
+//#include "srwlib.h"
+
 //*************************************************************************
 
 struct srTDriftPropBufVars {
@@ -60,14 +64,16 @@ class srTDriftSpace : public srTGenOptElem {
 						// 2- prop. from waist
 						// 3- prop. without quad. phase term
 	//srTDriftPropBufVars PropBufVars;
+	char TreatPath; // switch specifying whether the absolute optical path should be taken into account in radiation phase (=1) or not (=0, default)
 
 public:
 	double Length;
 	srTDriftPropBufVars PropBufVars;
 
-	srTDriftSpace(double InLength =0.) 
+	srTDriftSpace(double InLength =0., char InTreatPath =0) 
 	{ 
 		Length = InLength;
+		TreatPath = InTreatPath; //OC010813
 		AllowPropToWaist = 1; // To switch
 	}
 	srTDriftSpace(srTStringVect* pElemInfo) 
@@ -79,6 +85,10 @@ public:
 	//int PropagateRadiation(srTSRWRadStructAccessData* pRadAccessData, int MethNo, srTRadResizeVect& ResizeBeforeAndAfterVect)
 	int PropagateRadiation(srTSRWRadStructAccessData* pRadAccessData, srTParPrecWfrPropag& ParPrecWfrPropag, srTRadResizeVect& ResizeBeforeAndAfterVect)
 	{
+		//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+		//double start;
+		//get_walltime(&start);
+
 		int result = 0;
 		
 		ChooseLocalPropMode(pRadAccessData, ParPrecWfrPropag);
@@ -96,7 +106,10 @@ public:
 				CErrWarn::AddWarningMessage(&gVectWarnNos, PROPAG_PREC_REDUCED_DUE_TO_MEMORY_LIMIT);
 			}
 		}
-		
+
+		//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+		//srwlPrintTime(":PropagateRadiation : LocalPropMode == -1",&start);
+
 		//if(ParPrecWfrPropag.AnalTreatment == 1)
 		//{// Treating linear terms analytically
 		//OC25102010: commented-out because of errors in case of partially-coherent emission and B fiber
@@ -121,7 +134,7 @@ public:
 
 	//int PropagateRadiationMeth_0(srTSRWRadStructAccessData* pRadAccessData)
 	int PropagateRadiationSingleE_Meth_0(srTSRWRadStructAccessData* pRadAccessData, srTSRWRadStructAccessData* pPrevRadAccessData)
-	{//it may work for many photon energies too
+	{//it works for many photon energies too!
 		int result;
 		if(result = PropagateRadiationSimple(pRadAccessData)) return result;
 		if(result = PropagateRadMoments(pRadAccessData, 0)) return result;
@@ -131,8 +144,15 @@ public:
 	}
 
 	int PropagateRadiationMeth_0(srTSRWRadStructAccessData* pRadAccessData) //virtual in srTGenOptElem
-	{
-		return PropagateRadiationSingleE_Meth_0(pRadAccessData, 0);
+	{//because for the Drift, the following works for many photon energies too!
+		//return PropagateRadiationSingleE_Meth_0(pRadAccessData, 0);
+		//OC251214
+		if((LocalPropMode == 0) || (LocalPropMode == 3) || (pRadAccessData->ne == 1)) return PropagateRadiationSingleE_Meth_0(pRadAccessData, 0);
+		else
+		{
+			pRadAccessData->SetNonZeroWavefrontLimitsToFullRange();
+			return srTGenOptElem::PropagateRadiationMeth_0(pRadAccessData); //since (LocalPropMode == 1) and (LocalPropMode == 2) - propagation to/from waist introduces some dispersion and can potentially modify mesh
+		}
 	}
 
 	int PropagateRadiationMeth_1(srTSRWRadStructAccessData*);
@@ -143,6 +163,8 @@ public:
 		//	LocalPropMode = 3; return;
 		//end OC test
 
+/**
+//OC240114 (commented-out)
 		int LocPropToWaistCanBeApplied = PropToWaistCanBeApplied(pRadAccessData);
 		if(LocPropToWaistCanBeApplied)
 		{
@@ -172,8 +194,20 @@ public:
 		{
 			LocalPropMode = -1; return;
 		}
+**/
 
 		LocalPropMode = 0; // Normal, through ang. repres.
+
+		//OC240114
+		if((ParPrecWfrPropag.AnalTreatment == 1) || (ParPrecWfrPropag.AnalTreatment == 2)) 
+		{
+			LocalPropMode = 3; PropBufVars.AnalytTreatSubType = ParPrecWfrPropag.AnalTreatment;
+		}
+		else if(ParPrecWfrPropag.AnalTreatment == 3) LocalPropMode = 2; //Propagation From Waist
+		else if(ParPrecWfrPropag.AnalTreatment == 4) LocalPropMode = 1; //Propagation To Waist
+
+		//OC100914 Aux. methods for testing / benchmarking
+		else if(ParPrecWfrPropag.AnalTreatment >= 100) LocalPropMode = 100; //Propagation To Waist
 	}
 
 	int PropToWaistCanBeApplied(srTSRWRadStructAccessData* pRadAccessData)
@@ -209,11 +243,20 @@ public:
 	{
 		if(LocalPropMode == 0) return PropagateRadiationSimple_AngRepres(pRadAccessData);
 		else if(LocalPropMode == 1) return PropagateRadiationSimple_PropToWaist(pRadAccessData);
+		else if(LocalPropMode == 2) return PropagateRadiationSimple_PropFromWaist(pRadAccessData); //OC240114 (added)
 		else if(LocalPropMode == 3) return PropagateRadiationSimple_AnalytTreatQuadPhaseTerm(pRadAccessData);
+
+		//OC100914 Aux. methods for testing / benchmarking
+		else if(LocalPropMode == 100) return PropagateRadiationSimple_NumIntFresnel(pRadAccessData);
+
 		else return 0;
 	}
 	int PropagateRadiationSimple_AngRepres(srTSRWRadStructAccessData* pRadAccessData)
 	{
+		//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+		//double start;
+		//get_walltime(&start);
+
 		int result;
 		double xStartOld = pRadAccessData->xStart, zStartOld = pRadAccessData->zStart;
 		pRadAccessData->xStart = -(pRadAccessData->nx >> 1)*pRadAccessData->xStep;
@@ -223,13 +266,23 @@ public:
 		pRadAccessData->xWfrMin += xShift; pRadAccessData->xWfrMax += xShift;
 		pRadAccessData->zWfrMin += zShift; pRadAccessData->zWfrMax += zShift;
 
-			pRadAccessData->WfrEdgeCorrShouldBeDone = 0;	
+			pRadAccessData->WfrEdgeCorrShouldBeDone = 0;
+
+		//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+		//srwlPrintTime(":PropagateRadiationSimple_AngRepres:setup",&start);
 
 		if(pRadAccessData->Pres != 1) 
 		{
 			if(result = SetRadRepres(pRadAccessData, 1)) return result;
 		}
+
+		//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+		//srwlPrintTime(":PropagateRadiationSimple_AngRepres:SetRadRepres 1",&start);
+
 		if(result = TraverseRadZXE(pRadAccessData)) return result;
+
+		//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+		//srwlPrintTime(":PropagateRadiationSimple_AngRepres:TraverseRadZXE",&start);
 
 			if(pRadAccessData->UseStartTrToShiftAtChangingRepresToCoord)
 			{
@@ -238,6 +291,9 @@ public:
 			}
 
 		if(result = SetRadRepres(pRadAccessData, 0)) return result;
+
+		//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+		//srwlPrintTime(":PropagateRadiationSimple_AngRepres:SetRadRepres 2",&start);
 
 		pRadAccessData->xStart = xStartOld; pRadAccessData->zStart = zStartOld;
 
@@ -248,11 +304,16 @@ public:
 			}
 
 		pRadAccessData->SetNonZeroWavefrontLimitsToFullRange();
+
+		//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+		//srwlPrintTime(":PropagateRadiationSimple_AngRepres:SetNonZeroWavefrontLimitsToFullRange 2",&start);
+
 		return 0;
 	}
 	int PropagateRadiationSimple_PropToWaist(srTSRWRadStructAccessData* pRadAccessData);
 	int PropagateRadiationSimple_PropFromWaist(srTSRWRadStructAccessData* pRadAccessData);
 	int PropagateRadiationSimple_AnalytTreatQuadPhaseTerm(srTSRWRadStructAccessData* pRadAccessData);
+	int PropagateRadiationSimple_NumIntFresnel(srTSRWRadStructAccessData* pRadAccessData); //OC100914 Aux. method for testing / benchmarking
 
 	int PropagateRadiationSimple1D(srTRadSect1D* pSect1D)
 	{
@@ -300,7 +361,7 @@ public:
 		PropBufVars.xc = pRadAccessData->xc;
 		PropBufVars.zc = pRadAccessData->zc;
 		PropBufVars.ExtraConstPhase = Pi_d_LambdaM*(pRadAccessData->xc*pRadAccessData->xc/pRadAccessData->RobsX 
-												+ pRadAccessData->zc*pRadAccessData->zc/pRadAccessData->RobsZ);
+												  + pRadAccessData->zc*pRadAccessData->zc/pRadAccessData->RobsZ);
 
 		double TwoPi_d_LambdaM = 2.*Pi_d_LambdaM;
 		PropBufVars.TwoPiXc_d_LambdaMRx = TwoPi_d_LambdaM*pRadAccessData->xc/pRadAccessData->RobsX;
@@ -372,6 +433,11 @@ public:
 
 		////double ConstPhaseShift = 6.2831853071795*Length/Lambda_m;
 		////PhaseShift += ConstPhaseShift; //may be necessary for 3D wavefronts?
+		if(TreatPath == 1) //OC010813
+		{//??
+			PhaseShift += (5.067730652e+06)*Length*EXZ.e;
+			//+= 6.2831853072*Length/Lambda_m;
+		}
 
 		float CosPh, SinPh;
 		CosAndSin(PhaseShift, CosPh, SinPh);
@@ -387,18 +453,24 @@ public:
 		double rx = EXZ.x, rz = EXZ.z;
 		double PhaseShift = PropBufVars.Pi_d_LambdaM_d_Length*(rx*rx + rz*rz);
 
-		if(PropBufVars.PassNo == 3) 
-		{
-			//if(*(EPtrs.pExRe) != 0)
-			//{
-			//	int aha = 1;
-			//}
-			return;
-		}
+		//if(PropBufVars.PassNo == 3) 
+		//{
+		//	//if(*(EPtrs.pExRe) != 0)
+		//	//{
+		//	//	int aha = 1;
+		//	//}
+		//	return;
+		//}
 
 		if(PropBufVars.PassNo == 1) 
 		{
 			PhaseShift += PropBufVars.TwoPiXc_d_LambdaMRx*rx + PropBufVars.TwoPiZc_d_LambdaMRz*rz;
+
+			if(TreatPath == 1) //OC010813
+			{//??
+				PhaseShift += (5.067730652e+06)*Length*EXZ.e;
+				//+= 6.2831853072*Length/Lambda_m;
+			}
 		}
 		////else if(PropBufVars.PassNo == 2)
 		////{
@@ -434,6 +506,15 @@ public:
 		////double Lambda_m = 1.239842e-06/EXZ.e;
 		////double ConstPhaseShift = 6.2831853071795*Length/Lambda_m;
 		////PhaseShift += ConstPhaseShift; //may be necessary for 3D wavefronts?
+
+		if(TreatPath == 1) //OC010813
+		{
+			if(PropBufVars.PassNo == 2)//??
+			{
+				PhaseShift += (5.067730652e+06)*Length*EXZ.e;
+				//+= 6.2831853072*Length/Lambda_m;
+			}
+		}
 
 		float CosPh, SinPh; CosAndSin(PhaseShift, CosPh, SinPh);
 
@@ -484,7 +565,14 @@ public:
 			//double rx = EXZ.x /*- PropBufVars.xc*/, rz = EXZ.z; /*- PropBufVars.zc;*/
 			double Pi_d_Lambda_m = 3.1415926536/Lambda_m;
 			PhaseShift = Pi_d_Lambda_m*(PropBufVars.invRxL*rx*rx + PropBufVars.invRzL*rz*rz);
-			////PhaseShift += 2*Pi_d_Lambda_m*Length; //may be necessary for 3D wavefronts?
+
+			//OCTEST
+			//PhaseShift += 2*Pi_d_Lambda_m*Length; //may be necessary for 3D wavefronts?
+			//END OCTEST
+			if(TreatPath == 1) //OC010813
+			{
+				PhaseShift += 2*Pi_d_Lambda_m*Length;
+			}
 		}
 
 		float CosPh, SinPh; CosAndSin(PhaseShift, CosPh, SinPh);
@@ -525,6 +613,12 @@ public:
 		double ArgE2 = Arg*Arg;
 		double c1ArgE2 = c1*ArgE2;
 		double PhaseShift = c0*ArgE2*(1. + c1ArgE2 + c1ArgE2*c1ArgE2);
+		if(TreatPath == 1) //OC010813
+		{//??
+			PhaseShift += (5.067730652e+06)*Length*EXZ.e;
+			//+= 6.2831853072*Length/Lambda_m;
+		}
+
 		float CosPh, SinPh;
 		CosAndSin(PhaseShift, CosPh, SinPh);
 		float NewExRe = (*(EPtrs.pExRe))*CosPh - (*(EPtrs.pExIm))*SinPh;
@@ -543,6 +637,12 @@ public:
 		{
 			if(EXZ.VsXorZ == 'x') PhaseShift += PropBufVars.TwoPiXc_d_LambdaMRx*rx;
 			else PhaseShift += PropBufVars.TwoPiXc_d_LambdaMRx*rz;
+
+			if(TreatPath == 1) //OC010813
+			{//??
+				PhaseShift += (5.067730652e+06)*Length*EXZ.e;
+				//+= 6.2831853072*Length/Lambda_m;
+			}
 		}
 		float CosPh, SinPh; CosAndSin(PhaseShift, CosPh, SinPh);
 		float NewExRe = (*(EPtrs.pExRe))*CosPh - (*(EPtrs.pExIm))*SinPh;

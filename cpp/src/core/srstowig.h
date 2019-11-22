@@ -58,7 +58,8 @@ struct srTRadContribInterval {
 
 	double Bx_St, Bz_St, Btx_St, Btz_St, X_St, Z_St, IntBtxE2_St, IntBtzE2_St;
 	double Bx_Fi, Bz_Fi, Btx_Fi, Btz_Fi, X_Fi, Z_Fi, IntBtxE2_Fi, IntBtzE2_Fi;
-	int IndSt, IndFi;
+	//int IndSt, IndFi;
+	long long IndSt, IndFi;
 
 	double Ph_St, dPhds_St, d2Phds2_St, Ph_Fi, dPhds_Fi, d2Phds2_Fi;
 	double Ax_St, dAxds_St, Az_St, dAzds_St, Ax_Fi, dAxds_Fi, Az_Fi, dAzds_Fi;
@@ -185,12 +186,18 @@ public:
 	void DetermineSingleElecDistrEffSizes1D(float* CmpnArr, char VsXorZ, double& M_Cen);
 	void DetermineResizeBeforeConv2D(double MxxElecEff, double MzzElecEff, double MxxPowSingleE, double MzzPowSingleE, srTRadResize& Resize);
 	void DetermineResizeBeforeConv1D(double M_ElecEff, double M_DistrSingleE, char VsXorZ, srTRadResize1D& Resize);
-	void ConstructDataForConv2D(float* CmpnArr, float* NewData, long NewNx, long NewNz);
-	void ConstructDataForConv1D(float* CmpnArr, float* AuxConvData, long NpOld, long NpNew);
+	void ConstructDataForConv2D(float* CmpnArr, float* NewData, long long NewNx, long long NewNz); //OC26042019
+	//void ConstructDataForConv2D(float* CmpnArr, float* NewData, long NewNx, long NewNz);
+	void ConstructDataForConv1D(float* CmpnArr, float* AuxConvData, long long NpOld, long long NpNew); //OC26042019
+	//void ConstructDataForConv1D(float* CmpnArr, float* AuxConvData, long NpOld, long NpNew);
+	//int PerformConvolutionWithGaussian2D(float* ConvData, long long NewNx, long long NewNz, double MxxElecEff, double MzzElecEff);
 	int PerformConvolutionWithGaussian2D(float* ConvData, long NewNx, long NewNz, double MxxElecEff, double MzzElecEff);
+	//int PerformConvolutionWithGaussian1D(float* AuxConvData, long long NpAux, double M_ElecEff, char VsXorZ);
 	int PerformConvolutionWithGaussian1D(float* AuxConvData, long NpAux, double M_ElecEff, char VsXorZ);
-	void ExtractDataAfterConv2D(float* AuxConvData, long NxAux, long NzAux, float* CmpnArr);
-	void ExtractDataAfterConv1D(float* AuxConvData, long NpAux, long Np, float* CmpnArr);
+	void ExtractDataAfterConv2D(float* AuxConvData, long long NxAux, long long NzAux, float* CmpnArr); //OC26042019
+	//void ExtractDataAfterConv2D(float* AuxConvData, long NxAux, long NzAux, float* CmpnArr);
+	//void ExtractDataAfterConv1D(float* AuxConvData, long NpAux, long Np, float* CmpnArr);
+	void ExtractDataAfterConv1D(float* AuxConvData, long long NpAux, long long Np, float* CmpnArr);
 	void SuppressNegativeValues(float* StokesCmpnArr);
 	
 	int CheckInputConsistency();
@@ -214,7 +221,8 @@ public:
 			*(tSym++) = ChangeSignS3? -(*(tOrig++)) : *(tOrig++);
 		}
 	}
-	int AllocateIntervalsArray(long Ns)
+	//int AllocateIntervalsArray(long Ns)
+	int AllocateIntervalsArray(long long Ns)
 	{
 		DeallocateIntervalsArray();
 		RadContribIntervals = new srTRadContribInterval[Ns];
@@ -277,7 +285,8 @@ public:
 	int SetUpCrossTermsContribArray()
 	{
 		DeallocateCrossTermsContribArray();
-		long TotPo = (DistrInfoDat.nz*DistrInfoDat.nx*DistrInfoDat.nLamb) << 2;
+		//long TotPo = (DistrInfoDat.nz*DistrInfoDat.nx*DistrInfoDat.nLamb) << 2;
+		long long TotPo = (((long long)DistrInfoDat.nz)*((long long)DistrInfoDat.nx)*((long long)DistrInfoDat.nLamb)) << 2;
 		CrossTermsContribArray = new float[TotPo];
 		if(CrossTermsContribArray == 0) return MEMORY_ALLOCATION_FAILURE;
 
@@ -320,7 +329,8 @@ public:
 	{
 		double PIdLamb_Inv_m = (DistrInfoDat.TreatLambdaAsEnergyIn_eV)? 2.533840802E+06*EXZ.e : 3.14159265359E+09/EXZ.e;
 
-		int Ns_mi_1 = FieldBasedArrays.Ns - 1;
+		//int Ns_mi_1 = FieldBasedArrays.Ns - 1;
+		long long Ns_mi_1 = FieldBasedArrays.Ns - 1;
 		double PerLen = FieldBasedArrays.sStep*Ns_mi_1;
 		double yObs = DistrInfoDat.yStart;
 		double BufMag = ((FieldBasedArrays.IntBtxE2Arr)[Ns_mi_1] - *(FieldBasedArrays.IntBtxE2Arr))

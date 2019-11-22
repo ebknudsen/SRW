@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
 #############################################################################
 # SRWLIB Example#8: Simulating partially-coherent UR focusing with a CRL
-# v 0.05
+# v 0.07
 #############################################################################
 
 from __future__ import print_function #Python 2.7 compatibility
 from srwlib import *
 import os
-#import sys
 
 print('SRWLIB Python Example # 8:')
 print('Simulating emission and propagation of undulator radiation (UR) wavefront through a simple optical scheme including CRL')
@@ -21,52 +20,6 @@ print('For more information on parallel calculations under "mpi4py" please see d
 print('Note that the long-lasting partially-coherent UR calculation saves from time to time instant average intensity to an ASCII file, ', end='')
 print('so the execution of the long loop over "macro-electrons" can be aborted after some time without the danger that all results will be lost.')
 print('')
-
-#**********************Auxiliary function to write tabulated resulting Intensity data to ASCII file:
-#replaced by srwlib.srwl_uti_save_intens_ascii
-#def AuxSaveIntData(arI, mesh, filePath):
-#    f = open(filePath, 'w')
-#    f.write('#C-aligned Intensity (inner loop is vs photon energy, outer loop vs vertical position)\n')
-#    f.write('#' + repr(mesh.eStart) + ' #Initial Photon Energy [eV]\n')
-#    f.write('#' + repr(mesh.eFin) + ' #Final Photon Energy [eV]\n')
-#    f.write('#' + repr(mesh.ne) + ' #Number of points vs Photon Energy\n')
-#    f.write('#' + repr(mesh.xStart) + ' #Initial Horizontal Position [m]\n')
-#    f.write('#' + repr(mesh.xFin) + ' #Final Horizontal Position [m]\n')
-#    f.write('#' + repr(mesh.nx) + ' #Number of points vs Horizontal Position\n')
-#    f.write('#' + repr(mesh.yStart) + ' #Initial Vertical Position [m]\n')
-#    f.write('#' + repr(mesh.yFin) + ' #Final Vertical Position [m]\n')
-#    f.write('#' + repr(mesh.ny) + ' #Number of points vs Vertical Position\n')
-#    for i in range(mesh.ne*mesh.nx*mesh.ny): #write all data into one column using "C-alignment" as a "flat" 1D array
-#        f.write(' ' + repr(arI[i]) + '\n')
-#    f.close()
-
-#**********************Auxiliary function to write Optical Transmission characteristic data to ASCII file:
-#replaced by srwlib.srwl_uti_save_intens_ascii
-#def AuxSaveOpTransmData(optTr, t, filePath):
-#    f = open(filePath, 'w')
-#    f.write('#C-aligned optical Transmission characteristic (inner loop is vs horizontal position, outer loop vs vertical position)\n')
-#    f.write('#' + repr(optTr.mesh.eStart) + ' #Initial Photon Energy [eV]\n')
-#    f.write('#' + repr(optTr.mesh.eFin) + ' #Final Photon Energy [eV]\n')
-#    f.write('#' + repr(optTr.mesh.ne) + ' #Number of points vs Photon Energy\n')
-#    f.write('#' + repr(optTr.mesh.xStart) + ' #Initial Horizontal Position [m]\n')
-#    f.write('#' + repr(optTr.mesh.xFin) + ' #Final Horizontal Position [m]\n')
-#    f.write('#' + repr(optTr.mesh.nx) + ' #Number of points vs Horizontal Position\n')
-#    f.write('#' + repr(optTr.mesh.yStart) + ' #Initial Vertical Position [m]\n')
-#    f.write('#' + repr(optTr.mesh.yFin) + ' #Final Vertical Position [m]\n')
-#    f.write('#' + repr(optTr.mesh.ny) + ' #Number of points vs Vertical Position\n')
-#    neLoc = 1
-#    if(optTr.mesh.ne > 1):
-#        neLoc = optTr.mesh.ne
-#    for i in range(neLoc*optTr.mesh.nx*optTr.mesh.ny): #write all data into one column using "C-alignment" as a "flat" 1D array
-#        tr = 0
-#        if((t == 1) or (t == 2)): #amplitude or intensity transmission
-#            tr = optTr.arTr[i*2]
-#            if(t == 2): #intensity transmission
-#                tr *= tr
-#        else: #optical path difference
-#            tr = optTr.arTr[i*2 + 1]
-#        f.write(' ' + repr(tr) + '\n')
-#    f.close()
 
 #****************************Input Parameters:
 strExDataFolderName = 'data_example_08' #example data sub-folder name
@@ -118,7 +71,7 @@ relPrec = 0.01 #relative precision
 zStartInteg = 0 #longitudinal position to start integration (effective if < zEndInteg)
 zEndInteg = 0 #longitudinal position to finish integration (effective if > zStartInteg)
 npTraj = 20000 #Number of points for trajectory calculation 
-useTermin = 1 #Use "terminating terms" (i.e. asymptotic expansions at zStartInteg and zEndInteg) or not (1 or 0 respectively)
+useTermin = 0 #1 #Use "terminating terms" (i.e. asymptotic expansions at zStartInteg and zEndInteg) or not (1 or 0 respectively)
 sampFactNxNyForProp = 0.25 #sampling factor for adjusting nx, ny (effective if > 0)
 arPrecPar = [meth, relPrec, zStartInteg, zEndInteg, npTraj, useTermin, 0]
 
@@ -149,8 +102,8 @@ meshInitPartCoh = deepcopy(wfr2.mesh)
 wfr2.partBeam = elecBeam
 
 #***********Optical Elements and Propagation Parameters
-fx = 1e+23 #Focal length in Horizontal plane
-fy = 19.0939 #Focal length in Horizontal plane
+fx = 1e+23 #Focal Length in Horizontal plane
+fy = 19.0939 #Focal Length in Vertical plane
 optLens = SRWLOptL(fx, fy) #Ideal Lens
 
 delta = 4.3712962E-06 #Refractive index decrement of Be at 8830 eV
@@ -162,12 +115,10 @@ nCRL = 3
 wallThick = 50E-06 #[m] wall thickness of CRL
 
 optCRL = srwl_opt_setup_CRL(2, delta, attenLen, 1, geomApertNF, geomApertF, rMin, nCRL, wallThick, 0, 0) #1D CRL
-print('   Saving CRL transmission data to files (for viewing/debugging)...', end='')
-#AuxSaveOpTransmData(optCRL, 2, os.path.join(os.getcwd(), strExDataFolderName, strOpTrFileName))
+print('   Saving CRL transmission data to files (for viewing/debugging) ... ', end='')
 optTrIntCRL = optCRL.get_data(2, 3)
 srwl_uti_save_intens_ascii(optTrIntCRL, optCRL.mesh, os.path.join(os.getcwd(), strExDataFolderName, strOpTrFileName), 0, ['', 'Horizontal Position', 'Vertical Position', 'Intensity Transmission'], _arUnits=['', 'm', 'm', 'r.u.'])
 
-#AuxSaveOpTransmData(optCRL, 3, os.path.join(os.getcwd(), strExDataFolderName, strOpPathDifFileName))
 optPathDifCRL = optCRL.get_data(3, 3)
 srwl_uti_save_intens_ascii(optPathDifCRL, optCRL.mesh, os.path.join(os.getcwd(), strExDataFolderName, strOpPathDifFileName), 0, ['', 'Horizontal Position', 'Vertical Position', 'Opt. Path Diff.'], _arUnits=['', 'm', 'm', 'm'])
 print('done')
@@ -176,7 +127,8 @@ optApert = SRWLOptA('r', 'a', geomApertNF, geomApertF) #Aperture
 
 optDrift = SRWLOptD(38.73) #Drift space
 
-propagParApert = [0, 0, 1., 0, 0, 1.5, 1.0, 1.1, 8., 0, 0, 0]
+#propagParApert = [0, 0, 1., 0, 0, 1.5, 1.0, 1.1, 8., 0, 0, 0]
+propagParApert = [0, 0, 1., 0, 0, 1.5, 1.0, 1.1, 6., 0, 0, 0]
 propagParLens =  [0, 0, 1., 0, 0, 1.0, 1.0, 1.0, 1., 0, 0, 0]
 propagParDrift = [0, 0, 1., 1, 0, 1.0, 1.2, 1.0, 1., 0, 0, 0]
 

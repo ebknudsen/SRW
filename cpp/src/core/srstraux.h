@@ -22,6 +22,7 @@
 #include "srinterf.h"
 #include "cmplxd.h"
 #include "srercode.h"
+#include "srwlib.h"
 
 #include <vector>
 
@@ -38,7 +39,8 @@ struct srLambXYZ {
 struct srTEXZ {
 	double e, x, z;
 	char VsXorZ;
-	long aux_offset;
+	//long aux_offset;
+	long long aux_offset;
 };
 
 //*************************************************************************
@@ -52,9 +54,12 @@ struct srTEXZY {
 //*************************************************************************
 
 struct srTStNoFiNo {
-	int StNo, FiNo, StOffset;
-	srTStNoFiNo(int InStNo, int InFiNo) { StNo = InStNo; FiNo = InFiNo; StOffset = 0;}
-	srTStNoFiNo(int InStNo, int InFiNo, int InStOffset) 
+	//int StNo, FiNo, StOffset;
+	long long StNo, FiNo, StOffset;
+	//srTStNoFiNo(int InStNo, int InFiNo) { StNo = InStNo; FiNo = InFiNo; StOffset = 0;}
+	srTStNoFiNo(long long InStNo, long long InFiNo) { StNo = InStNo; FiNo = InFiNo; StOffset = 0;}
+	//srTStNoFiNo(int InStNo, int InFiNo, int InStOffset) 
+	srTStNoFiNo(long long InStNo, long long InFiNo, long long InStOffset) 
 	{ 
 		StNo = InStNo; FiNo = InFiNo; StOffset = InStNo; StOffset = InStOffset;
 	}
@@ -305,7 +310,8 @@ struct iterator_traits <char**> {
 //*************************************************************************
 
 struct srTRadIntervVal {
-	int InitLevelNo, SecondInt;
+	//int InitLevelNo, SecondInt;
+	long long InitLevelNo, SecondInt;
 	double sStart, sEnd;
 };
 
@@ -313,7 +319,8 @@ struct srTRadIntervVal {
 
 struct srTSMeshData {
 	double s;
-	int LevelNo, NoOfPoOnLev;
+	//int LevelNo, NoOfPoOnLev;
+	long long LevelNo, NoOfPoOnLev;
 };
 
 //*************************************************************************
@@ -433,10 +440,12 @@ struct srTMinMaxEParam {
 		zIndMaxReEx = zIndMaxImEx = zIndMaxReEz = zIndMaxImEz = zIndMinReEx = zIndMinImEx = zIndMinReEz = zIndMinImEz = 0;
 	}
 
-	void FindAbsMaxAmongReAndIm(float& MaxAbsEx, long& xIndMaxAbsEx, long& zIndMaxAbsEx, float& MaxAbsEz, long& xIndMaxAbsEz, long& zIndMaxAbsEz)
+	//void FindAbsMaxAmongReAndIm(float& MaxAbsEx, long& xIndMaxAbsEx, long& zIndMaxAbsEx, float& MaxAbsEz, long& xIndMaxAbsEz, long& zIndMaxAbsEz)
+	void FindAbsMaxAmongReAndIm(float& MaxAbsEx, long long& xIndMaxAbsEx, long long& zIndMaxAbsEx, float& MaxAbsEz, long long& xIndMaxAbsEz, long long& zIndMaxAbsEz)
 	{
 		float AbsMaxReEx, AbsMaxImEx;
-		long xIndAbsMaxReEx, zIndAbsMaxReEx, xIndAbsMaxImEx, zIndAbsMaxImEx;
+		//long xIndAbsMaxReEx, zIndAbsMaxReEx, xIndAbsMaxImEx, zIndAbsMaxImEx;
+		long long xIndAbsMaxReEx, zIndAbsMaxReEx, xIndAbsMaxImEx, zIndAbsMaxImEx;
 		if(::fabs(MaxReEx) > ::fabs(MinReEx))
 		{
 			AbsMaxReEx = (float)::fabs(MaxReEx); xIndAbsMaxReEx = xIndMaxReEx; zIndAbsMaxReEx = zIndMaxReEx; 
@@ -465,7 +474,8 @@ struct srTMinMaxEParam {
 		}
 
 		float AbsMaxReEz, AbsMaxImEz;
-		long xIndAbsMaxReEz, zIndAbsMaxReEz, xIndAbsMaxImEz, zIndAbsMaxImEz;
+		//long xIndAbsMaxReEz, zIndAbsMaxReEz, xIndAbsMaxImEz, zIndAbsMaxImEz;
+		long long xIndAbsMaxReEz, zIndAbsMaxReEz, xIndAbsMaxImEz, zIndAbsMaxImEz;
 
 		if(::fabs(MaxReEz) > ::fabs(MinReEz))
 		{
@@ -495,10 +505,12 @@ struct srTMinMaxEParam {
 		}
 	}
 
-	void FindGenMaxAbsE(float& MaxAbsE, long& xIndMaxAbsE, long& zIndMaxAbsE)
+	//void FindGenMaxAbsE(float& MaxAbsE, long& xIndMaxAbsE, long& zIndMaxAbsE)
+	void FindGenMaxAbsE(float& MaxAbsE, long long& xIndMaxAbsE, long long& zIndMaxAbsE)
 	{
 		float MaxAbsEx, MaxAbsEz;
-		long xIndMaxAbsEx, zIndMaxAbsEx, xIndMaxAbsEz, zIndMaxAbsEz;
+		//long xIndMaxAbsEx, zIndMaxAbsEx, xIndMaxAbsEz, zIndMaxAbsEz;
+		long long xIndMaxAbsEx, zIndMaxAbsEx, xIndMaxAbsEz, zIndMaxAbsEz;
 		FindAbsMaxAmongReAndIm(MaxAbsEx, xIndMaxAbsEx, zIndMaxAbsEx, MaxAbsEz, xIndMaxAbsEz, zIndMaxAbsEz);
 		if(MaxAbsEx > MaxAbsEz)
 		{
@@ -554,12 +566,16 @@ struct srTRadResize {
 	char ModeBits; //OC090311
 	double PropAutoPrec; //OC090311
 
+	//OC011213
+	double vLxOut, vLyOut, vLzOut; //Coordinates of the output Optical Axis vector
+	double vHxOut, vHyOut; //Coordinates of the Horizontal Base vector of the output frame
+
 	srTRadResize() 
 	{
 		pem = ped = pxm = pxd = pzm = pzd = 1.;
 
 		RelCenPosE = RelCenPosX = RelCenPosZ = 0.5;
-		RelCenPosTol = 0.1; // To steer only here	
+		RelCenPosTol = 1.e-06; //0.001; //OC141014 //0.1; // To steer only here	
 		
 		PropAutoPrec = 1.;
 		ShiftTypeBeforeRes = 0;
@@ -574,6 +590,10 @@ struct srTRadResize {
 		//#2- Propagation: Auto-Resize Before Propagation
 		//#3- Propagation: Auto-Resize After Propagation
 		//#4- Propagation: Allow Under-Sampling Mode
+
+		//OC011213
+		vLxOut = vLyOut = vLzOut = 0; //Default coordinates of the output Optical Axis vector
+		vHxOut = vHyOut = 0; //Default coordinates of the Horizontal Base vector of the output frame
 	}
 
 	char useOtherSideFFT(int in=-1) 
@@ -662,6 +682,7 @@ struct srTRadSect1D {
 	float *pEx, *pEz;
 	double ArgStep, ArgStart, ArgStartTr;
 	long np;
+	//long long np; //OC26042019
 
 	double eVal, OtherCoordVal;
 	char VsXorZ;
@@ -759,7 +780,8 @@ struct srTRadSect1D {
 
 		RadSect1D = *this;
 
-		long Two_np = np << 1;
+		//long Two_np = np << 1;
+		long long Two_np = np << 1; //OC26042019
 		RadSect1D.pEx = new float[Two_np];
 		if(RadSect1D.pEx == 0) return MEMORY_ALLOCATION_FAILURE;
 		RadSect1D.pEz = new float[Two_np];
@@ -893,6 +915,7 @@ public:
 
 	double eStep, eStart, xStep, xStart, zStep, zStart, yStep, yStart;
 	long ne, nx, nz, ny;
+	//long long ne, nx, nz, ny; //OC26042019
 
 	double dx, dz; //for flux calculations, for internal use only
 
@@ -912,7 +935,8 @@ public:
 
 		if(MemoryShouldBeAllocated)
 		{
-			long Np = In_ne*In_nx*In_nz;
+			//long Np = In_ne*In_nx*In_nz;
+			long long Np = ((long long)In_ne)*((long long)In_nx)*((long long)In_nz);
 			if(Np <= 0) return;
 			
 			pBaseSto = new float[Np << 2];
@@ -928,7 +952,8 @@ public:
 
 		if(MemoryShouldBeAllocated)
 		{
-			long Np = In_ne*In_nx*In_nz*In_ny;
+			//long Np = In_ne*In_nx*In_nz*In_ny;
+			long long Np = ((long long)In_ne)*((long long)In_nx)*((long long)In_nz)*((long long)In_ny);
 			if(Np <= 0) return;
 			
 			pBaseSto = new float[Np << 2];
@@ -957,7 +982,8 @@ public:
 			ny = pWfrSmp->ny; 
 			yStep = (ny > 1)? (pWfrSmp->yEnd - yStart)/(ny - 1) : 0;
 
-			long Np = ne*nx*nz*ny;
+			//long Np = ne*nx*nz*ny;
+			long long Np = ((long long)ne)*((long long)nx)*((long long)nz)*((long long)ny);
 			if(Np <= 0) throw INCORRECT_GRID_FOR_WAVEFRONT;
 			pBaseSto = new float[Np << 2];
 			MemoryWasAllocatedInternally = true;
@@ -1019,10 +1045,12 @@ public:
 	{
 		if(pBaseSto == 0) return;
 		//long LenData = (ne << 2)*nx*nz;
-		long LenData = (ne << 2)*nx*nz*ny;
+		//long LenData = (ne << 2)*nx*nz*ny;
+		long long LenData = (ne << 2)*((long long)nx)*((long long)nz)*((long long)ny);
 		if(LenData <= 0) return;
 		float *tData = pBaseSto;
-		for(long i=0; i<LenData; i++) *(tData++) = 0.;
+		//for(long i=0; i<LenData; i++) *(tData++) = 0.;
+		for(long long i=0; i<LenData; i++) *(tData++) = 0.;
 	}
 
 	void OutDataPtrs(srTSRWStokesInData* pStokesInData)
@@ -1086,6 +1114,7 @@ public:
 
 	double xStep, xStart, zStep, zStart;
 	long nx, nz;
+	//long long nx, nz;
 
 	CSmartPtr<double> m_spObSurfData;
 
@@ -1101,7 +1130,8 @@ public:
 		if(pWfrSmp->nx > 1) xStep = (pWfrSmp->xEnd - pWfrSmp->xStart)/(pWfrSmp->nx - 1);
 		if(pWfrSmp->nz > 1) zStep = (pWfrSmp->zEnd - pWfrSmp->zStart)/(pWfrSmp->nz - 1);
 
-		long LenData = nx*nz;
+		//long LenData = nx*nz;
+		long long LenData = ((long long)nx)*((long long)nz);
 		if(LenData <= 0) throw INCORRECT_PARAMS_SR_COMP;
 		pBasePowDens = 0;
 		pBasePowDens = new float[LenData];
@@ -1268,8 +1298,10 @@ struct srTElecBeamMoments {
 struct srTWaveAccessData {
 	char* pWaveData;
 	char WaveType[2]; // 'f'|'d'|'cf'|'cd'
-	long AmOfDims;
-	long DimSizes[10];
+	//long AmOfDims;
+	int AmOfDims; //OC26042019
+	//long DimSizes[10];
+	long long DimSizes[10]; //OC26042019
 	double DimStartValues[10];
 	double DimSteps[10];
 	char DimUnits[10][255];
@@ -1282,6 +1314,97 @@ struct srTWaveAccessData {
 
 	srTWaveAccessData()
 	{
+		Init(); //OC13112018
+
+		//pWaveData = 0;
+		//*WaveType = '\0';
+		//AmOfDims = -1;
+		//for(int i=0; i<10; i++) 
+		//{
+		//	DimSizes[i] = -1;
+		//	DimStartValues[i] = 1.E+23;
+		//	DimSteps[i] = 1.E+23;
+		//	*(DimUnits[i]) = '\0';
+		//}
+		//*NameOfWave = '\0';
+		//*DataUnits = '\0';
+	}
+
+	srTWaveAccessData(char* pcData, char typeData, SRWLRadMesh* pMesh)
+	{//OC13112018
+		Init();
+
+		pWaveData = pcData;
+		WaveType[0] = typeData; WaveType[1] = '\0';
+	
+		int nDims = 0;
+		//int n1 = 0, n2 = 0, n3 = 0;
+		long long n1 = 0, n2 = 0, n3 = 0; //OC26042019
+		double start1 = 0, start2 = 0, start3 = 0;
+		double step1 = 0, step2 = 0, step3 = 0;
+		if(pMesh->ne > 1) 
+		{
+			nDims++; 
+			n1 = pMesh->ne;
+			start1 = pMesh->eStart;
+			step1 = (pMesh->eFin - start1)/(n1 - 1);
+		}
+		if(pMesh->nx > 1) 
+		{
+			nDims++;
+			if(n1 == 0) 
+			{
+				n1 = pMesh->nx;
+				start1 = pMesh->xStart;
+				step1 = (pMesh->xFin - start1)/(n1 - 1);
+			}
+			else 
+			{
+				n2 = pMesh->nx;
+				start2 = pMesh->xStart;
+				step2 = (pMesh->xFin - start2)/(n2 - 1);
+			}
+		}
+		if(pMesh->ny > 1) 
+		{
+			nDims++;
+			if(n1 == 0) 
+			{
+				n1 = pMesh->ny;
+				start1 = pMesh->yStart;
+				step1 = (pMesh->yFin - start1)/(n1 - 1);
+			}
+			else if(n2 == 0) 
+			{
+				n2 = pMesh->ny;
+				start2 = pMesh->yStart;
+				step2 = (pMesh->yFin - start2)/(n2 - 1);
+			}
+			else 
+			{
+				n3 = pMesh->ny;
+				start3 = pMesh->yStart;
+				step3 = (pMesh->yFin - start3)/(n3 - 1);
+			}
+		}
+
+		AmOfDims = nDims;
+
+		DimSizes[0] = n1;
+		DimSizes[1] = n2;
+		DimSizes[2] = n3;
+		DimStartValues[0] = start1;
+		DimStartValues[1] = start2;
+		DimStartValues[2] = start3;
+		DimSteps[0] = step1;
+		DimSteps[1] = step2;
+		DimSteps[2] = step3;
+
+		//To process Mutual Intensity case: pMesh->type == 'm' !
+	}
+
+	void Init()
+	{//OC13112018
 		pWaveData = 0;
 		*WaveType = '\0';
 		AmOfDims = -1;
@@ -1296,11 +1419,13 @@ struct srTWaveAccessData {
 		*DataUnits = '\0';
 	}
 
-	void OutRealData(double* ArrToFill, long MaxLen)
+	void OutRealData(double* ArrToFill, long long MaxLen)
+	//void OutRealData(double* ArrToFill, long MaxLen)
 	{
 		if((ArrToFill == 0) || (pWaveData == 0) || (AmOfDims == 0)) return;
 
-		long ActLen = 1;
+		//long ActLen = 1;
+		long long ActLen = 1;
 		for(int i=0; i<AmOfDims; i++) ActLen *= DimSizes[i];
 		if(ActLen < MaxLen) MaxLen = ActLen;
 		
@@ -1338,7 +1463,8 @@ struct srTWaveAccessData {
 struct srTWaveAccessDataD1D {
 
 	DOUBLE* pData;
-	long np;
+	//long np;
+	long long np;
 	double Start;
 	double Step;
 	char ArgUnits[255];
@@ -1375,7 +1501,7 @@ struct srTWaveAccessDataD1D {
 struct srTRadExtract {
 
 	int PolarizCompon; // 0: Linear Hor.; 1: Linear Vert.; 2: Linear 45; 3: Linear 135; 4: Circul. Right; 5: Circul. Left; 6: Total
-	int Int_or_Phase; // 0: 1-e Int; 1: Multi-e Int; 2: Phase; 3: Re(E); 4: 1-e Flux; 5: Multi-e Flux
+	int Int_or_Phase; // 0: 1-e Int; 1: Multi-e Int; 2: Phase; 3: Re(E); 4: 1-e Flux; 5: Multi-e Flux; 6- Im(E); 7- Time or Photon Energy Integrated Intensity
 	int PlotType; // vs 0: e; 1: x; 2: z; 3: x&z; 4: e&x; 5: e&z; 6: e&x&z
 	int TransvPres; // 0: Spatial; 1: Angular
 
@@ -1778,6 +1904,7 @@ struct srTPrecSASE {
 	long npart;
 	double rmax0;
 	long ncar;
+	//long long ncar; //OC26042019
 	long nptr;
 	long nscr;
 	long nscz;
@@ -2037,14 +2164,16 @@ public:
 		return OutAmOfDims;
 	}
 
-	static int ExtractDimSizes(srTDataMD* pDataMD, long* ArDimSizes)
+	static int ExtractDimSizes(srTDataMD* pDataMD, long long* ArDimSizes) //OC26042019 (port to XOP7)
+	//static int ExtractDimSizes(srTDataMD* pDataMD, long* ArDimSizes)
 	{
 		if((pDataMD == 0) || (ArDimSizes == 0)) return 0;
 		if(pDataMD->pData == 0) return 0;
 		int DimNum = (int)(pDataMD->AmOfDims);
 		if(DimNum > 10) DimNum = 10;
 
-		long *tArDimSizes = ArDimSizes, *tDimSizes = pDataMD->DimSizes;
+		//long *tArDimSizes = ArDimSizes, *tDimSizes = pDataMD->DimSizes;
+		long long *tArDimSizes = ArDimSizes, *tDimSizes = pDataMD->DimSizes; //OC26042019 (port to XOP7)
 		for(int i=0; i<DimNum; i++)
 		{
 			*(tArDimSizes++) = *(tDimSizes++);

@@ -52,10 +52,12 @@ srTSRWRadStructAccessData* srTRadIntThickBeam::CreateNewRadStructWithConstParams
 	if(xStep <= 0) xStep = HalfExtraRangeX/NpMin;
 	double xRangeStokes = (pStokes->nx - 1)*xStep;
 	int NumStepsInHalfExtraRangeX = (int)(HalfExtraRangeX/xStep) + 1;
+	//long long NumStepsInHalfExtraRangeX = (long long)(HalfExtraRangeX/xStep) + 1; //OC26042019
 	double ActualHalfExtraRangeX = NumStepsInHalfExtraRangeX*xStep;
 
 	double hSt = pStokes->xStart - ActualHalfExtraRangeX;
 	int hN = pStokes->nx + 2*NumStepsInHalfExtraRangeX;
+	//long long hN = pStokes->nx + 2*NumStepsInHalfExtraRangeX; //OC26042019
     double hFi = pStokes->xStart + xRangeStokes + ActualHalfExtraRangeX;
     //double hSt = pStokes->xStart;
     //int hN = pStokes->nx;
@@ -65,10 +67,12 @@ srTSRWRadStructAccessData* srTRadIntThickBeam::CreateNewRadStructWithConstParams
 	if(zStep <= 0) zStep = HalfExtraRangeZ/NpMin;
 	double zRangeStokes = (pStokes->nz - 1)*zStep;
 	int NumStepsInHalfExtraRangeZ = (int)(HalfExtraRangeZ/zStep) + 1;
+	//long long NumStepsInHalfExtraRangeZ = (long long)(HalfExtraRangeZ/zStep) + 1; //OC26042019
 	double ActualHalfExtraRangeZ = NumStepsInHalfExtraRangeZ*zStep;
 
 	double vSt = pStokes->zStart - ActualHalfExtraRangeZ;
 	int vN = pStokes->nz + 2*NumStepsInHalfExtraRangeZ;
+	//long long vN = pStokes->nz + 2*NumStepsInHalfExtraRangeZ; //OC26042019
     double vFi = pStokes->zStart + zRangeStokes + ActualHalfExtraRangeZ;
 	//double vSt = pStokes->zStart;
 	//int vN = pStokes->nz;
@@ -76,6 +80,7 @@ srTSRWRadStructAccessData* srTRadIntThickBeam::CreateNewRadStructWithConstParams
 
 	double eSt = pStokes->eStart;
 	int eN = pStokes->ne;
+	//long long eN = pStokes->ne; //OC26042019
     double eFi = eSt + (eN - 1)*(pStokes->eStep);
 
 	//pWfrSmp = new srTWfrSmp(pStokes->yStart, hSt, hFi, hN, vSt, vFi, vN, eSt, eFi, eN, "EV");
@@ -105,17 +110,23 @@ double srTRadIntThickBeam::GetNextElecEnergyFromGausDistrib(srTEbmDat& OrigElecB
 
 //*************************************************************************
 
-double srTRadIntThickBeam::UpdateResultStokesData(float* ArrAuxDataS0, float* ArrAuxDataS1, float* ArrAuxDataS2, float* ArrAuxDataS3, srTWfrSmp* pWfrSmp, int iElecEn, srTStokesStructAccessData* pStokes)
+//double srTRadIntThickBeam::UpdateResultStokesData(float* ArrAuxDataS0, float* ArrAuxDataS1, float* ArrAuxDataS2, float* ArrAuxDataS3, srTWfrSmp* pWfrSmp, int iElecEn, srTStokesStructAccessData* pStokes)
+double srTRadIntThickBeam::UpdateResultStokesData(float* ArrAuxDataS0, float* ArrAuxDataS1, float* ArrAuxDataS2, float* ArrAuxDataS3, srTWfrSmp* pWfrSmp, long long iElecEn, srTStokesStructAccessData* pStokes)
 {//this assumes that Stokes S0 is always defined
 	double RelPrec = 1E+23;
 
-	int xAmStepsLeft = (int)((pStokes->xStart - pWfrSmp->xStart)/(pStokes->xStep) + 0.000001);
-	int xAmStepsRight = (int)((pWfrSmp->xEnd - (pStokes->xStart + (pStokes->nx - 1)*(pStokes->xStep)))/(pStokes->xStep) + 0.000001);
-	int zAmStepsLeft = (int)((pStokes->zStart - pWfrSmp->zStart)/(pStokes->zStep) + 0.000001);
+	//int xAmStepsLeft = (int)((pStokes->xStart - pWfrSmp->xStart)/(pStokes->xStep) + 0.000001);
+	//int xAmStepsRight = (int)((pWfrSmp->xEnd - (pStokes->xStart + (pStokes->nx - 1)*(pStokes->xStep)))/(pStokes->xStep) + 0.000001);
+	//int zAmStepsLeft = (int)((pStokes->zStart - pWfrSmp->zStart)/(pStokes->zStep) + 0.000001);
+	long long xAmStepsLeft = (long long)((pStokes->xStart - pWfrSmp->xStart)/(pStokes->xStep) + 0.000001); //OC26042019
+	long long xAmStepsRight = (long long)((pWfrSmp->xEnd - (pStokes->xStart + (pStokes->nx - 1)*(pStokes->xStep)))/(pStokes->xStep) + 0.000001);
+	long long zAmStepsLeft = (long long)((pStokes->zStart - pWfrSmp->zStart)/(pStokes->zStep) + 0.000001);
 	//int zAmStepsRight = (int)((pWfrSmp->zEnd - (pStokes->zStart + (pStokes->nz - 1)*(pStokes->zStep)))/(pStokes->zStep) + 0.000001);
 
-	int Offset0 = (zAmStepsLeft*(pWfrSmp->nx) + xAmStepsLeft)*(pWfrSmp->nLamb);
-	int ShiftBetweenRowsX = (xAmStepsRight + xAmStepsLeft)*(pWfrSmp->nLamb);
+	//int Offset0 = (zAmStepsLeft*(pWfrSmp->nx) + xAmStepsLeft)*(pWfrSmp->nLamb);
+	long long Offset0 = (((long long)zAmStepsLeft)*((long long)(pWfrSmp->nx)) + (long long)xAmStepsLeft)*((long long)(pWfrSmp->nLamb));
+	//int ShiftBetweenRowsX = (xAmStepsRight + xAmStepsLeft)*(pWfrSmp->nLamb);
+	long long ShiftBetweenRowsX = (xAmStepsRight + xAmStepsLeft)*(pWfrSmp->nLamb); //OC26042019
 
 	float *tBaseSto = pStokes->pBaseSto;
 	float *tAuxDataS0 = 0, *tAuxDataS1 = 0, *tAuxDataS2 = 0, *tAuxDataS3 = 0;
@@ -152,7 +163,8 @@ double srTRadIntThickBeam::UpdateResultStokesData(float* ArrAuxDataS0, float* Ar
 		if(S2_IsDefined) tAuxDataS2 += ShiftBetweenRowsX;
 		if(S3_IsDefined) tAuxDataS3 += ShiftBetweenRowsX;
 	}
-	long TotNp = (pStokes->nz)*(pStokes->nx)*(pStokes->ne);
+	//long TotNp = (pStokes->nz)*(pStokes->nx)*(pStokes->ne);
+	long long TotNp = ((long long)(pStokes->nz))*((long long)(pStokes->nx))*((long long)(pStokes->ne));
 	double AbsPrecSigma = ::sqrt(SumDifSq/double(TotNp));
 	double AvgS0 = SumNewS0/double(TotNp);
 	if(AvgS0 == 0) AvgS0 = 1.E-14;
@@ -195,7 +207,8 @@ void srTRadIntThickBeam::ComputeTotalStokesDistrViaSingleElec(srTEbmDat* pElecBe
 	double zc = pStokes->zStart + 0.5*(pStokes->nz - 1)*(pStokes->zStep);
 	double ec = pStokes->eStart;
 
-	long AmOfAuxData = (pWfrSmp->nLamb)*(pWfrSmp->nx)*(pWfrSmp->nz);
+	//long AmOfAuxData = (pWfrSmp->nLamb)*(pWfrSmp->nx)*(pWfrSmp->nz);
+	long long AmOfAuxData = ((long long)(pWfrSmp->nLamb))*((long long)(pWfrSmp->nx))*((long long)(pWfrSmp->nz));
 	float* ArrAuxDataS0 = new float[AmOfAuxData];
 	float* ArrAuxDataS1 = new float[AmOfAuxData];
 	float* ArrAuxDataS2 = new float[AmOfAuxData];
@@ -205,9 +218,11 @@ void srTRadIntThickBeam::ComputeTotalStokesDistrViaSingleElec(srTEbmDat* pElecBe
 
 	double RelPrecElecEn = pPrcPar->RelPrecOrStep;
 	double ActualRelPrecIntens = 1E+23;
-	int iElecEn = 0;
+	//int iElecEn = 0;
+	long long iElecEn = 0;
 
-	int MaxNumIter = 1000000;
+	//int MaxNumIter = 1000000;
+	long long MaxNumIter = 1000000;
 	if(pPrcPar->NumIter > 0)
 	{
         MaxNumIter = pPrcPar->NumIter;

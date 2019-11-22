@@ -14,12 +14,12 @@
 #include "srradstr.h"
 #include "srradind.h"
 #include "srstraux.h"
-#include "gmfft.h"
 #include "srmagfld.h"
 #include "srgsnbm.h"
-//#include "srmamet.h"
-#include "gmmeth.h"
 #include "sroptelm.h"
+#include "gmfft.h"
+#include "gmmeth.h"
+#include "gminterp.h"
 
 #ifdef __IGOR_PRO__
 #ifndef __SRSEND_H
@@ -31,6 +31,7 @@
 
 extern int (*pgWfrExtModifFunc)(int Action, srTSRWRadInData* pWfrIn, char PolComp);
 extern int (*gpWfrModifFunc)(int action, SRWLWfr* pWfrIn, char pol); //SRWLIB
+extern char* (*gpAllocArrayFunc)(char type, long long len); //OC15082018
 
 //*************************************************************************
 
@@ -210,6 +211,34 @@ srTSRWRadStructAccessData::srTSRWRadStructAccessData(SRWLWfr* pWfr, srTGsnBeam* 
 		double xElAtYsrc = (pGsnBm->EbmDat).x0, zElAtYsrc = (pGsnBm->EbmDat).z0;
 		double NxNzOversamplingFactor = precPar[0];
 		AuxSetupActionsArbSrc(*pWfr, Robs, RobsAbsErr, xElAtYsrc, zElAtYsrc, NxNzOversamplingFactor);
+
+		if(pWfr->presFT == 1) //OC171215
+		{
+			avgPhotEn = pGsnBm->m_AvgPhotEn;
+		}
+	}
+}
+
+//*************************************************************************
+
+srTSRWRadStructAccessData::srTSRWRadStructAccessData(SRWLWfr* pWfr, double longPosSrc, double* precPar)
+{//Used for setting up spherical wave
+	if(pWfr == 0) throw SRWL_INCORRECT_WFR_STRUCT;
+	
+	Initialize();
+	InSRWRadPtrs(*pWfr);
+	m_newExtWfrCreateNotAllowed = true; //since new wavefront creation is not implemented in SRWLIB
+
+	yStart = pWfr->mesh.zStart;
+	double Robs = pWfr->mesh.zStart - longPosSrc;
+	double RobsAbsErr = 0.01*(::fabs(Robs));
+	double xElAtYsrc = pWfr->xc, zElAtYsrc = pWfr->yc;
+	double NxNzOversamplingFactor = precPar[0];
+	AuxSetupActionsArbSrc(*pWfr, Robs, RobsAbsErr, xElAtYsrc, zElAtYsrc, NxNzOversamplingFactor);
+
+	if(pWfr->presFT == 1)
+	{
+		avgPhotEn = 0.5*(pWfr->mesh.eStart + pWfr->mesh.eFin);
 	}
 }
 
@@ -324,6 +353,7 @@ void srTSRWRadStructAccessData::AuxSetupActionsArbSrc(SRWLWfr& srwlWfr, double R
 	if(NxNzOversamplingFactor > 0.)
 	{
 		long nxNew=-1, nzNew=-1; //?
+		//long long nxNew=-1, nzNew=-1; //OC26042019
 		UnderSamplingX = UnderSamplingZ = 1.;
 		CheckNxNzForSR(NxNzOversamplingFactor, nxNew, nzNew);
 
@@ -472,6 +502,7 @@ void srTSRWRadStructAccessData::InSRWRadPtrs(srTSRWRadInData* p, bool DataShould
 void srTSRWRadStructAccessData::InSRWRadPtrs(SRWLWfr& srwlWfr)
 {
 	pBaseRadX = (float*)srwlWfr.arEx; pBaseRadZ = (float*)srwlWfr.arEy;
+	pBaseRadXaux = (float*)srwlWfr.arExAux; pBaseRadZaux = (float*)srwlWfr.arEyAux; //OC151115
 	wRad = 0; wRadX = 0; wRadZ = 0;
 	hStateRadX = 0; hStateRadZ = 0;
 
@@ -487,10 +518,33 @@ void srTSRWRadStructAccessData::InSRWRadPtrs(SRWLWfr& srwlWfr)
 	SRWLStructRadMesh &mesh = srwlWfr.mesh;
 	eStart = mesh.eStart;
 	eStep = (mesh.ne <= 1)? 0 : (mesh.eFin - mesh.eStart)/(mesh.ne - 1); 
-	xStart = mesh.xStart; 
-	xStep = (mesh.nx <= 1)? 0 : (mesh.xFin - mesh.xStart)/(mesh.nx - 1); 
-	zStart = mesh.yStart;
-	zStep = (mesh.ny <= 1)? 0 : (mesh.yFin - mesh.yStart)/(mesh.ny - 1); 
+
+	//xStart = mesh.xStart; 
+	//xStep = (mesh.nx <= 1)? 0 : (mesh.xFin - mesh.xStart)/(mesh.nx - 1); 
+	if(mesh.nx <= 1) //OC170615
+	{
+		xStart = 0.5*(mesh.xStart + mesh.xFin);
+		xStep = 0.;
+	}
+	else
+	{
+		xStart = mesh.xStart; 
+		xStep = (mesh.xFin - mesh.xStart)/(mesh.nx - 1); 
+	}
+
+	//zStart = mesh.yStart;
+	//zStep = (mesh.ny <= 1)? 0 : (mesh.yFin - mesh.yStart)/(mesh.ny - 1); 
+	if(mesh.ny <= 1) //OC170615
+	{
+		zStart = 0.5*(mesh.yStart + mesh.yFin);
+		zStep = 0.;
+	}
+	else
+	{
+		zStart = mesh.yStart;
+		zStep = (mesh.yFin - mesh.yStart)/(mesh.ny - 1); 
+	}
+
 	ne = mesh.ne; nx = mesh.nx; nz = mesh.ny;
 	yStart = mesh.zStart; //OC21092011
 
@@ -510,9 +564,13 @@ void srTSRWRadStructAccessData::InSRWRadPtrs(SRWLWfr& srwlWfr)
 	Pres = srwlWfr.presCA;
 	PresT = srwlWfr.presFT;
 	ElecFldUnit = srwlWfr.unitElFld;
+	ElecFldAngUnit = srwlWfr.unitElFldAng; //OC20112017
+
 	avgPhotEn = srwlWfr.avgPhotEn;
 	LengthUnit = 0; // 0- m; 1- mm; 
 	PhotEnergyUnit = 0; // 0- eV; 1- keV; 
+
+	avgT = (PresT == 1)? (eStart + 0.5*eStep*(ne - 1)) : 0; //OC101015 //???
 
 	EmulateElectronBeamStruct(srwlWfr.partBeam);
 	wElecBeam = 0;
@@ -630,6 +688,7 @@ void srTSRWRadStructAccessData::OutSRWRadPtrs(srTSRWRadInData* p)
 void srTSRWRadStructAccessData::OutSRWRadPtrs(SRWLWfr& srwlWfr)
 {
 	srwlWfr.arEx = (char*)pBaseRadX; srwlWfr.arEy = (char*)pBaseRadZ;
+	srwlWfr.arExAux = (char*)pBaseRadXaux; srwlWfr.arEyAux = (char*)pBaseRadZaux; //OC151115
 	//p->wRad = wRad; p->wRadX = wRadX; p->wRadZ = wRadZ;
 	//p->hStateRadX = hStateRadX; p->hStateRadZ = hStateRadZ;
 	
@@ -698,8 +757,9 @@ void srTSRWRadStructAccessData::OutSRWRadPtrs(SRWLWfr& srwlWfr)
 
 //*************************************************************************
 
-int srTSRWRadStructAccessData::ModifyWfrNeNxNz(char PolarizComp)
-{
+//int srTSRWRadStructAccessData::ModifyWfrNeNxNz(char PolarizComp)
+int srTSRWRadStructAccessData::ModifyWfrNeNxNz(char PolarizComp, bool backupIsReq) 
+{//OC131115
 #if defined(_SRWDLL) || defined(SRWLIB_STATIC) || defined(SRWLIB_SHARED) 
 	int res = 0;
 	if(BaseRadWasEmulated) return ReAllocBaseRadAccordingToNeNxNz(PolarizComp);
@@ -708,6 +768,7 @@ int srTSRWRadStructAccessData::ModifyWfrNeNxNz(char PolarizComp)
 	{//to be removed!!
 		srTSRWRadInData AuxRadInData;
 		OutSRWRadPtrs(&AuxRadInData);
+		//if((*pgWfrExtModifFunc)(2, &AuxRadInData, PolarizComp)) return SRWL_WFR_EXT_MODIF_FAILED;
 		if((*pgWfrExtModifFunc)(2, &AuxRadInData, PolarizComp)) return SRWL_WFR_EXT_MODIF_FAILED;
 
 		InSRWRadPtrs(&AuxRadInData);
@@ -717,7 +778,9 @@ int srTSRWRadStructAccessData::ModifyWfrNeNxNz(char PolarizComp)
 		SRWLWfr *pExtWfr = (SRWLWfr*)m_pExtWfr;
 		OutSRWRadPtrs(*pExtWfr);
 
-		if((*gpWfrModifFunc)(2, pExtWfr, PolarizComp)) return SRWL_WFR_EXT_MODIF_FAILED;
+		int actNum = 2;
+		if(backupIsReq) actNum = 12; //OC131115
+		if((*gpWfrModifFunc)(actNum, pExtWfr, PolarizComp)) return SRWL_WFR_EXT_MODIF_FAILED;
 
 		InSRWRadPtrs(*pExtWfr);
 	}
@@ -730,6 +793,51 @@ int srTSRWRadStructAccessData::ModifyWfrNeNxNz(char PolarizComp)
 	srTSend Send;
 	return Send.ModifyRadNeNxNz(*this, PolarizComp);
 #endif
+}
+
+//*************************************************************************
+
+int srTSRWRadStructAccessData::AllocExtIntArray(char type, char dep, char*& pcAlloc) 
+{//OC18082018
+#if defined(SRWLIB_STATIC) || defined(SRWLIB_SHARED) 
+	
+	pcAlloc = 0;
+	if(gpAllocArrayFunc != 0)
+	{
+		char typeAr = 'f';
+		if(type == 4) typeAr = 'd'; //single-e rad. phase
+	
+		long long np = GetIntNumPts(dep);
+		if(np > 0)
+		{
+			pcAlloc = (*gpAllocArrayFunc)(typeAr, np);
+			if(pcAlloc == 0) return SRWL_EXT_ARRAY_ALLOC_FAILED;
+		}
+	}
+
+#endif
+	return 0;
+}
+
+//*************************************************************************
+
+int srTSRWRadStructAccessData::DeleteWfrBackupData(char PolarizComp)
+{//OC131115
+#if defined(SRWLIB_STATIC) || defined(SRWLIB_SHARED) 
+
+	if((gpWfrModifFunc != 0) && (m_pExtWfr != 0))
+	{
+		SRWLWfr *pExtWfr = (SRWLWfr*)m_pExtWfr;
+		OutSRWRadPtrs(*pExtWfr);
+
+		int actNum = 20; //Delete backup data
+		if((*gpWfrModifFunc)(actNum, pExtWfr, PolarizComp)) return SRWL_WFR_EXT_MODIF_FAILED;
+
+		InSRWRadPtrs(*pExtWfr);
+	}
+
+#endif
+	return 0;
 }
 
 //*************************************************************************
@@ -903,6 +1011,7 @@ void srTSRWRadStructAccessData::ProcessNxNzForPropag(srTWfrSmp* pWfrSmp, double 
 void srTSRWRadStructAccessData::CheckNxNzForSR(srTWfrSmp* pWfrSmp, double NxNzOversamplingFactor)
 {// Assumes that Robs, xc, zc were already set !
 	long Nx = pWfrSmp->nx, Nz = pWfrSmp->nz;
+	//long long Nx = pWfrSmp->nx, Nz = pWfrSmp->nz; //OC26042019
 	if((Nx > 0) && (Nz > 0)) return;
 	if(NxNzOversamplingFactor <= 0.) return;
 
@@ -953,6 +1062,7 @@ void srTSRWRadStructAccessData::CheckNxNzForSR(srTWfrSmp* pWfrSmp, double NxNzOv
 //*************************************************************************
 
 void srTSRWRadStructAccessData::CheckNxNzForSR(double NxNzOversamplingFactor, long& _nx, long& _nz)
+//void srTSRWRadStructAccessData::CheckNxNzForSR(double NxNzOversamplingFactor, long long& _nx, long long& _nz) //OC26042019
 {// Assumes that Robs, xc, zc and all other main members were already set in this!
 
 	//long Nx = pWfrSmp->nx, Nz = pWfrSmp->nz;
@@ -960,7 +1070,9 @@ void srTSRWRadStructAccessData::CheckNxNzForSR(double NxNzOversamplingFactor, lo
 	if(NxNzOversamplingFactor <= 0.) return;
 
 	const int SmallestN = 8;
-	double WavelengthIn_m = 1.239842E-06/eStart;
+	//double WavelengthIn_m = 1.239842E-06/eStart;
+	double ePhRef = (PresT == 0)? eStart : avgPhotEn; //OC041115 (making sure this works in time domain as well)
+	double WavelengthIn_m = 1.239842E-06/ePhRef; //OC041115
 	//(pWfrSmp->TreatLambdaAsEnergyIn_eV)? 1.239842E-06/(pWfrSmp->LambStart) : 1.E-06*(pWfrSmp->LambEnd);
 
 	CGenMathFFT2D FFT;
@@ -1029,6 +1141,7 @@ void srTSRWRadStructAccessData::EstimateOversamplingFactors(double& estimOverSam
 		double dx = ((dxStart < dxEnd)? dxStart : dxEnd); // /NxNzOversamplingFactor;
 		dx /= 1.2;
 		long Nx_nom = long(::fabs(xEndRel - xStartRel)/dx) + 1;
+		//long long Nx_nom = (long long)(::fabs(xEndRel - xStartRel)/dx) + 1; //OC26042019
 		if(((Nx_nom>>1)<<1) != Nx_nom) Nx_nom++;
 		FFT.NextCorrectNumberForFFT(Nx_nom);
 		//if(Nx_nom < SmallestN) Nx_nom = SmallestN;
@@ -1043,6 +1156,7 @@ void srTSRWRadStructAccessData::EstimateOversamplingFactors(double& estimOverSam
 		double dz = ((dzStart < dzEnd)? dzStart : dzEnd); // /NxNzOversamplingFactor;
 		dz /= 1.2;
 		long Nz_nom = long(::fabs(zEndRel - zStartRel)/dz) + 1;
+		//long long Nz_nom = (long long)(::fabs(zEndRel - zStartRel)/dz) + 1; //OC26042019
 		if(((Nz_nom>>1)<<1) != Nz_nom) Nz_nom++;
 		FFT.NextCorrectNumberForFFT(Nz_nom);
 		//if(Nz_nom < SmallestN) Nz_nom = SmallestN;
@@ -1055,7 +1169,8 @@ void srTSRWRadStructAccessData::EstimateOversamplingFactors(double& estimOverSam
 
 void srTSRWRadStructAccessData::CopyBaseRadData(float* pInBaseRadX, float* pInBaseRadZ)
 {
-	long LenRadData = (ne << 1)*nx*nz;
+	//long LenRadData = (ne << 1)*nx*nz;
+	long long LenRadData = (ne << 1)*((long long)nx)*((long long)nz);
 	bool NeedRadX = (LenRadData > 0) && (pInBaseRadX != 0) && (pBaseRadX != 0);
 	bool NeedRadZ = (LenRadData > 0) && (pInBaseRadZ != 0) && (pBaseRadZ != 0);
 
@@ -1063,14 +1178,16 @@ void srTSRWRadStructAccessData::CopyBaseRadData(float* pInBaseRadX, float* pInBa
 	{
 		float *tBaseRadX = pBaseRadX;
 		float *tInBaseRadX = pInBaseRadX;
-		for(long i=0; i<LenRadData; i++) *(tBaseRadX++) = *(tInBaseRadX++);
+		//for(long i=0; i<LenRadData; i++) *(tBaseRadX++) = *(tInBaseRadX++);
+		for(long long i=0; i<LenRadData; i++) *(tBaseRadX++) = *(tInBaseRadX++);
 		BaseRadWasEmulated = true;
 	}
 	if(NeedRadZ)
 	{
 		float *tBaseRadZ = pBaseRadZ;
 		float *tInBaseRadZ = pInBaseRadZ;
-		for(long i=0; i<LenRadData; i++) *(tBaseRadZ++) = *(tInBaseRadZ++);
+		//for(long i=0; i<LenRadData; i++) *(tBaseRadZ++) = *(tInBaseRadZ++);
+		for(long long i=0; i<LenRadData; i++) *(tBaseRadZ++) = *(tInBaseRadZ++);
 		BaseRadWasEmulated = true;
 	}
 }
@@ -1080,19 +1197,22 @@ void srTSRWRadStructAccessData::CopyBaseRadData(float* pInBaseRadX, float* pInBa
 //void srTSRWRadStructAccessData::CopyStatMomData(float* pInMomX, float* pInMomZ)
 void srTSRWRadStructAccessData::CopyStatMomData(double* pInMomX, double* pInMomZ) //OC130311
 {
-	int LenMom = 11*ne; // to steer
+	//int LenMom = 11*ne; // to steer
+	long long LenMom = 11*ne; //OC26042019
 	if((pInMomX != 0) && (pMomX != 0))
 	{
 		//float *tMomX = pMomX, *tInMomX = pInMomX;
 		double *tMomX = pMomX, *tInMomX = pInMomX;
-		for(int i=0; i<LenMom; i++) *(tMomX++) = *(tInMomX++);
+		//for(int i=0; i<LenMom; i++) *(tMomX++) = *(tInMomX++);
+		for(long long i=0; i<LenMom; i++) *(tMomX++) = *(tInMomX++); //OC26042019
 		MomWereEmulated = true;
 	}
 	if((pInMomZ != 0) && (pMomZ != 0))
 	{
 		//float *tMomZ = pMomZ, *tInMomZ = pInMomZ;
 		double *tMomZ = pMomZ, *tInMomZ = pInMomZ;
-		for(int i=0; i<LenMom; i++) *(tMomZ++) = *(tInMomZ++);
+		//for(int i=0; i<LenMom; i++) *(tMomZ++) = *(tInMomZ++);
+		for(long long i=0; i<LenMom; i++) *(tMomZ++) = *(tInMomZ++); //OC26042019
 		MomWereEmulated = true;
 	}
 }
@@ -1145,7 +1265,8 @@ srTSRWRadStructAccessData::srTSRWRadStructAccessData(srTSRWRadStructAccessData* 
 	if(pInRadStruct == 0) return;
 	srTSRWRadStructAccessData& InRadStruct = *pInRadStruct;
 
-	long LenRadData = (InRadStruct.ne << 1)*(InRadStruct.nx)*(InRadStruct.nz);
+	//long LenRadData = (InRadStruct.ne << 1)*(InRadStruct.nx)*(InRadStruct.nz);
+	long long LenRadData = (InRadStruct.ne << 1)*((long long)InRadStruct.nx)*((long long)InRadStruct.nz);
 	bool NeedRadX = (LenRadData > 0) && (InRadStruct.pBaseRadX != 0);
 	bool NeedRadZ = (LenRadData > 0) && (InRadStruct.pBaseRadZ != 0);
 
@@ -1154,7 +1275,8 @@ srTSRWRadStructAccessData::srTSRWRadStructAccessData(srTSRWRadStructAccessData* 
 		pBaseRadX = new float[LenRadData];
 		float *tBaseRadX = pBaseRadX;
 		float *tInBaseRadX = InRadStruct.pBaseRadX;
-		for(long i=0; i<LenRadData; i++) *(tBaseRadX++) = *(tInBaseRadX++);
+		//for(long i=0; i<LenRadData; i++) *(tBaseRadX++) = *(tInBaseRadX++);
+		for(long long i=0; i<LenRadData; i++) *(tBaseRadX++) = *(tInBaseRadX++);
 		BaseRadWasEmulated = true;
 	}
 	if(NeedRadZ)
@@ -1162,7 +1284,8 @@ srTSRWRadStructAccessData::srTSRWRadStructAccessData(srTSRWRadStructAccessData* 
 		pBaseRadZ = new float[LenRadData];
 		float *tBaseRadZ = pBaseRadZ;
 		float *tInBaseRadZ = InRadStruct.pBaseRadZ;
-		for(long i=0; i<LenRadData; i++) *(tBaseRadZ++) = *(tInBaseRadZ++);
+		//for(long i=0; i<LenRadData; i++) *(tBaseRadZ++) = *(tInBaseRadZ++);
+		for(long long i=0; i<LenRadData; i++) *(tBaseRadZ++) = *(tInBaseRadZ++);
 		BaseRadWasEmulated = true;
 	}
 
@@ -1226,24 +1349,30 @@ srTSRWRadStructAccessData::srTSRWRadStructAccessData(srTSRWRadStructAccessData* 
 	{
 		//const int LenMomX = 11; // to steer
 		//pMomX = new float[LenMomX << 1];
-		int LenMomX = ne*11; // to steer
+		//int LenMomX = ne*11; // to steer
+		long long LenMomX = ne*11; //OC26042019
 		//pMomX = new float[LenMomX];
 		//float *tMomX = pMomX, *tInMomX = InRadStruct.pMomX;
 		pMomX = new double[LenMomX]; //OC130311
 		double *tMomX = pMomX, *tInMomX = InRadStruct.pMomX;
 
-		for(int i=0; i<LenMomX; i++) *(tMomX++) = *(tInMomX++);
+		//for(int i=0; i<LenMomX; i++) *(tMomX++) = *(tInMomX++);
+		for(long long i=0; i<LenMomX; i++) *(tMomX++) = *(tInMomX++); //OC26042019
 		MomWereEmulated = true;
 	}
 	if(InRadStruct.pMomZ != 0)
 	{
-		const int LenMomZ = 11; // to steer
-		//pMomZ = new float[LenMomZ << 1];
-		//float *tMomZ = pMomZ, *tInMomZ = InRadStruct.pMomZ;
-		pMomZ = new double[LenMomZ << 1]; //OC130311
+		//const int LenMomZ = 11; // to steer
+		////pMomZ = new float[LenMomZ << 1];
+		////float *tMomZ = pMomZ, *tInMomZ = InRadStruct.pMomZ;
+		//pMomZ = new double[LenMomZ << 1]; //OC130311
+
+		long long LenMomZ = ne*11; //OC26042019
+		pMomZ = new double[LenMomZ];
 		double *tMomZ = pMomZ, *tInMomZ = InRadStruct.pMomZ;
 
-		for(int i=0; i<LenMomZ; i++) *(tMomZ++) = *(tInMomZ++);
+		//for(int i=0; i<LenMomZ; i++) *(tMomZ++) = *(tInMomZ++);
+		for(long long i=0; i<LenMomZ; i++) *(tMomZ++) = *(tInMomZ++); //OC26042019
 		MomWereEmulated = true;
 	}
 	if(InRadStruct.pWfrAuxData != 0)
@@ -1276,7 +1405,8 @@ srTSRWRadStructAccessData::srTSRWRadStructAccessData(const srTSRWRadStructAccess
 	{
 		if(BaseRadWasEmulated)
 		{
-			long LenRadData = (inRad.ne << 1)*(inRad.nx)*(inRad.nz);
+			//long LenRadData = (inRad.ne << 1)*(inRad.nx)*(inRad.nz);
+			long long LenRadData = (inRad.ne << 1)*((long long)inRad.nx)*((long long)inRad.nz);
 			bool NeedRadX = (LenRadData > 0) && (inRad.pBaseRadX != 0);
 			bool NeedRadZ = (LenRadData > 0) && (inRad.pBaseRadZ != 0);
 			if(NeedRadX)
@@ -1284,14 +1414,16 @@ srTSRWRadStructAccessData::srTSRWRadStructAccessData(const srTSRWRadStructAccess
 				pBaseRadX = new float[LenRadData];
 				float *tBaseRadX = pBaseRadX;
 				float *tInBaseRadX = inRad.pBaseRadX;
-				for(long i=0; i<LenRadData; i++) *(tBaseRadX++) = *(tInBaseRadX++);
+				//for(long i=0; i<LenRadData; i++) *(tBaseRadX++) = *(tInBaseRadX++);
+				for(long long i=0; i<LenRadData; i++) *(tBaseRadX++) = *(tInBaseRadX++);
 			}
 			if(NeedRadZ)
 			{
 				pBaseRadZ = new float[LenRadData];
 				float *tBaseRadZ = pBaseRadZ;
 				float *tInBaseRadZ = inRad.pBaseRadZ;
-				for(long i=0; i<LenRadData; i++) *(tBaseRadZ++) = *(tInBaseRadZ++);
+				//for(long i=0; i<LenRadData; i++) *(tBaseRadZ++) = *(tInBaseRadZ++);
+				for(long long i=0; i<LenRadData; i++) *(tBaseRadZ++) = *(tInBaseRadZ++);
 			}
 		}
 		if(ResAfterWasEmulated && (inRad.pResAfter != 0))
@@ -1316,19 +1448,25 @@ srTSRWRadStructAccessData::srTSRWRadStructAccessData(const srTSRWRadStructAccess
 		{
 			if(inRad.pMomX != 0)
 			{
-				int LenMomX = ne*11; // to steer
+				//int LenMomX = ne*11; // to steer
+				long long LenMomX = ne*11; //OC26042019
 				pMomX = new double[LenMomX]; //OC130311
 				double *tMomX = pMomX, *tInMomX = inRad.pMomX;
 
-				for(int i=0; i<LenMomX; i++) *(tMomX++) = *(tInMomX++);
+				//for(int i=0; i<LenMomX; i++) *(tMomX++) = *(tInMomX++);
+				for(long long i=0; i<LenMomX; i++) *(tMomX++) = *(tInMomX++); //OC26042019
 			}
 			if(inRad.pMomZ != 0)
 			{
-				const int LenMomZ = 11; // to steer
-				pMomZ = new double[LenMomZ << 1]; //OC130311
+				//const int LenMomZ = 11; // to steer
+				//pMomZ = new double[LenMomZ << 1]; //OC130311
+
+				long long LenMomZ = ne*11; //OC26042019 ??
+				pMomZ = new double[LenMomZ];
 				double *tMomZ = pMomZ, *tInMomZ = inRad.pMomZ;
 
-				for(int i=0; i<LenMomZ; i++) *(tMomZ++) = *(tInMomZ++);
+				//for(int i=0; i<LenMomZ; i++) *(tMomZ++) = *(tInMomZ++);
+				for(long long i=0; i<LenMomZ; i++) *(tMomZ++) = *(tInMomZ++); //OC26042019
 			}
 		}
 		if(WfrAuxDataWasEmulated && (inRad.pWfrAuxData != 0))
@@ -1347,10 +1485,14 @@ void srTSRWRadStructAccessData::Initialize()
 {
 	wRad = NIL;
 	pBaseRadX = 0; pBaseRadZ = 0; // This is checked in FinishWorkingWithSRWRadStruct !!!
+	pBaseRadXaux = 0; pBaseRadZaux = 0; //OC151115
+
 	wRadX = wRadZ = NIL;
 	BaseRadWasEmulated = false;
 	
 	UseStartTrToShiftAtChangingRepresToCoord = false;
+	//UseStartTrToShiftAtChangingRepresToTime = false; //OC091115
+	avgT = 0; //OC101115
 	
 	DoNotResizeAfter = false;
 	ResAfterWasEmulated = false;
@@ -1761,7 +1903,8 @@ void srTSRWRadStructAccessData::ZeroPtrs()
 
 int srTSRWRadStructAccessData::ReAllocBaseRadAccordingToNeNxNz(char PolarizComp)
 {
-	long LenRadData = (ne << 1)*nx*nz;
+	//long LenRadData = (ne << 1)*nx*nz;
+	long long LenRadData = (ne << 1)*((long long)nx)*((long long)nz);
 	bool TreatPolCompX = ((PolarizComp == 0) || (PolarizComp == 'x')) && (LenRadData > 0);
 	bool TreatPolCompZ = ((PolarizComp == 0) || (PolarizComp == 'z')) && (LenRadData > 0);
 
@@ -1786,7 +1929,8 @@ int srTSRWRadStructAccessData::ReAllocBaseRadAccordingToNeNxNz(char PolarizComp)
 
 int srTSRWRadStructAccessData::AllocBaseRadAccordingToNeNxNz(char PolarizComp)
 {
-	long LenRadData = (ne << 1)*nx*nz;
+	//long LenRadData = (ne << 1)*nx*nz;
+	long long LenRadData = (ne << 1)*((long long)nx)*((long long)nz);
 	bool TreatPolCompX = ((PolarizComp == 0) || (PolarizComp == 'x')) && (LenRadData > 0);
 	bool TreatPolCompZ = ((PolarizComp == 0) || (PolarizComp == 'z')) && (LenRadData > 0);
 
@@ -1811,7 +1955,8 @@ int srTSRWRadStructAccessData::AllocBaseRadAccordingToNeNxNz(char PolarizComp)
 
 void srTSRWRadStructAccessData::DeAllocBaseRadAccordingToNeNxNz(char PolarizComp)
 {
-	long LenRadData = (ne << 1)*nx*nz;
+	//long LenRadData = (ne << 1)*nx*nz;
+	long long LenRadData = (ne << 1)*((long long)nx)*((long long)nz);
 	bool TreatPolCompX = ((PolarizComp == 0) || (PolarizComp == 'x')) && (LenRadData > 0);
 	bool TreatPolCompZ = ((PolarizComp == 0) || (PolarizComp == 'z')) && (LenRadData > 0);
 
@@ -1850,7 +1995,8 @@ void srTSRWRadStructAccessData::SetObsParamFromWfr(srTWfrSmp& smp)
 		smp.LambEnd = eStart + (ne - 1)*eStep;
 		smp.nLamb = ne;
 		smp.tStart = smp.tEnd = 0;
-		smp.nt = 0;
+		//smp.nt = 0;
+		smp.nt = 1; //OC191215
 	}
 	else
 	{
@@ -1858,7 +2004,8 @@ void srTSRWRadStructAccessData::SetObsParamFromWfr(srTWfrSmp& smp)
 		smp.tEnd = eStart + (ne - 1)*eStep;
 		smp.nt = ne;
 		smp.LambStart = smp.LambEnd = avgPhotEn;
-		smp.nLamb = 0;
+		//smp.nLamb = 0;
+		smp.nLamb = 1; //OC191215
 	}
 
 	smp.nx = nx;
@@ -1930,14 +2077,17 @@ void srTSRWRadStructAccessData::SetRadSamplingFromObs(srTWfrSmp& DistrInfoDat)
 	zStep = (DistrInfoDat.nz > 1)? (DistrInfoDat.zEnd - DistrInfoDat.zStart)/(DistrInfoDat.nz - 1) : 0.;
 	nz = DistrInfoDat.nz;
 
-	if(DistrInfoDat.nt > 1)
+	PresT = DistrInfoDat.PresT; //OC191215
+
+	//if(DistrInfoDat.nt > 1)
+	if(DistrInfoDat.PresT == 1) //OC191215
 	{
 		eStart = DistrInfoDat.tStart;
 		eStep = (DistrInfoDat.tEnd - DistrInfoDat.tStart)/(DistrInfoDat.nt - 1);
 		ne = DistrInfoDat.nt;
-		PresT = 1;
+		//PresT = 1; //OC191215
 	}
-	else PresT = 0;
+	//else PresT = 0;
 	
 	// To walk around a bug in Igor
 	if(eStep == 0.) { eStep = (eStart != 0.)? (1.e-08)*(::fabs(eStart)) : 1.e-10;}
@@ -1990,7 +2140,8 @@ int srTSRWRadStructAccessData::FindAverageDistanceToSource(srTTrjDat& TrjDat, sr
 	double sStart = TrjDat.sStart;
 	double sRange = (TrjDat.LenFieldData - 1)*TrjDat.sStep;
 	double sEnd = sStart + sRange;
-	int NpVsS = TrjDat.LenFieldData;
+	//int NpVsS = TrjDat.LenFieldData;
+	long long NpVsS = TrjDat.LenFieldData;
 
 	if(pPrecElecFld != 0)
 	{
@@ -2027,7 +2178,8 @@ int srTSRWRadStructAccessData::FindAverageDistanceToSource(srTTrjDat& TrjDat, sr
 	TrjDat.CompTotalTrjDataTrjDisp(sStart, sEnd, NpVsS, BtxArr, BtzArr, xArr, zArr, DistUnits);
 
 	//int Len_mi_1 = TrjDat.LenFieldData - 1;
-	int Len_mi_1 = NpVsS - 1;
+	// Len_mi_1 = NpVsS - 1;
+	long long Len_mi_1 = NpVsS - 1;
 	double *pBtx = BtxArr + Len_mi_1, *pBtz = BtzArr + Len_mi_1, *pX = xArr + Len_mi_1, *pZ = zArr + Len_mi_1;
 	double RobsLoc = DistrInfoDat.yStart - sEnd;
 	double InvRobsLoc = 1./RobsLoc;
@@ -2046,7 +2198,8 @@ int srTSRWRadStructAccessData::FindAverageDistanceToSource(srTTrjDat& TrjDat, sr
 	double RobsXMid = VeryLarge, RobsZMid = VeryLarge;
 
 	//for(int is=1; is<TrjDat.LenFieldData; is++)
-	for(int is=1; is<NpVsS; is++)
+	//for(int is=1; is<NpVsS; is++)
+	for(long long is=1; is<NpVsS; is++)
 	{
 		RobsLoc += TrjDat.sStep;
 		InvRobsLoc = 1./RobsLoc;
@@ -2112,7 +2265,8 @@ int srTSRWRadStructAccessData::FindAverageDistanceToSource(srTTrjDat& TrjDat, sr
 	//xElAtYsrc = TrjDat.EbmDat.x0; zElAtYsrc = TrjDat.EbmDat.z0;
 
 	//int YsrcIndNo = (Ysrc - TrjDat.sStart)/TrjDat.sStep;
-	int YsrcIndNo = (int)((Ysrc - sStart)/TrjDat.sStep + 0.00001);
+	//int YsrcIndNo = (int)((Ysrc - sStart)/TrjDat.sStep + 0.00001);
+	long long YsrcIndNo = (long long)((Ysrc - sStart)/TrjDat.sStep + 0.00001);
 	if(YsrcIndNo < 0) YsrcIndNo = 0;
 	//if(YsrcIndNo >= TrjDat.LenFieldData) YsrcIndNo = TrjDat.LenFieldData - 1;
 	if(YsrcIndNo >= NpVsS) YsrcIndNo = NpVsS - 1;
@@ -2132,7 +2286,8 @@ int srTSRWRadStructAccessData::FindAverageDistanceToSource(srTTrjDat& TrjDat, do
 	double sStart = TrjDat.sStart;
 	double sRange = (TrjDat.LenFieldData - 1)*TrjDat.sStep;
 	double sEnd = sStart + sRange;
-	int NpVsS = TrjDat.LenFieldData;
+	//int NpVsS = TrjDat.LenFieldData;
+	long long NpVsS = TrjDat.LenFieldData;
 
 	if(precPar != 0)
 	{
@@ -2169,7 +2324,8 @@ int srTSRWRadStructAccessData::FindAverageDistanceToSource(srTTrjDat& TrjDat, do
 	double *zArr = TmpDataStorage + (TrjDat.LenFieldData*3);
 	TrjDat.CompTotalTrjDataTrjDisp(sStart, sEnd, NpVsS, BtxArr, BtzArr, xArr, zArr, DistUnits);
 
-	int Len_mi_1 = NpVsS - 1;
+	//int Len_mi_1 = NpVsS - 1;
+	long long Len_mi_1 = NpVsS - 1;
 	double *pBtx = BtxArr + Len_mi_1, *pBtz = BtzArr + Len_mi_1, *pX = xArr + Len_mi_1, *pZ = zArr + Len_mi_1;
 
 	double RobsLoc = yStart - sEnd;
@@ -2182,14 +2338,15 @@ int srTSRWRadStructAccessData::FindAverageDistanceToSource(srTTrjDat& TrjDat, do
 	double MisFitZFiLast = (zEnd - *pZ)*InvRobsLoc - *pBtz;
 	double midObsX = 0.5*(xStart + xEnd);
 	double midObsZ = 0.5*(zStart + zEnd);
-	double MisFitXMidLast = (midObsX - *pX)*InvRobsLoc - *pBtx;
-	double MisFitZMidLast = (midObsZ - *pZ)*InvRobsLoc - *pBtz;
+	//double MisFitXMidLast = (midObsX - *pX)*InvRobsLoc - *pBtx;
+	//double MisFitZMidLast = (midObsZ - *pZ)*InvRobsLoc - *pBtz;
 
 	const double VeryLarge = 1.E+23;
 	double RobsXSt = VeryLarge, RobsXFi = VeryLarge, RobsZSt = VeryLarge, RobsZFi = VeryLarge;
-	double RobsXMid = VeryLarge, RobsZMid = VeryLarge;
+	//double RobsXMid = VeryLarge, RobsZMid = VeryLarge;
 
-	for(int is=1; is<NpVsS; is++)
+	//for(int is=1; is<NpVsS; is++)
+	for(long long is=1; is<NpVsS; is++)
 	{
 		RobsLoc += TrjDat.sStep;
 		InvRobsLoc = 1./RobsLoc;
@@ -2205,10 +2362,60 @@ int srTSRWRadStructAccessData::FindAverageDistanceToSource(srTTrjDat& TrjDat, do
 			double MisFitXFi = (xEnd - *pX)*InvRobsLoc - *pBtx;
 			if(MisFitXFi*MisFitXFiLast < 0.) RobsXFi = RobsLoc;
 		}
-		if(RobsXMid == VeryLarge)
+		//if(RobsXMid == VeryLarge)
+		//{
+		//	double MisFitXMid = (midObsX - *pX)*InvRobsLoc - *pBtx;
+		//	if(MisFitXMid*MisFitXMidLast < 0.) RobsXMid = RobsLoc;
+		//}
+		if(RobsZSt == VeryLarge)
 		{
-			double MisFitXMid = (midObsX - *pX)*InvRobsLoc - *pBtx;
-			if(MisFitXMid*MisFitXMidLast < 0.) RobsXMid = RobsLoc;
+			double MisFitZSt = (zStart - *pZ)*InvRobsLoc - *pBtz;
+			if(MisFitZSt*MisFitZStLast < 0.) RobsZSt = RobsLoc;
+		}
+		if(RobsZFi == VeryLarge)
+		{
+			double MisFitZFi = (zEnd - *pZ)*InvRobsLoc - *pBtz;
+			if(MisFitZFi*MisFitZFiLast < 0.) RobsZFi = RobsLoc;
+		}
+		//if(RobsZMid == VeryLarge)
+		//{
+		//	double MisFitZMid = (midObsZ - *pZ)*InvRobsLoc - *pBtz;
+		//	if(MisFitZMid*MisFitZMidLast < 0.) RobsZMid = RobsLoc;
+		//}
+
+		if((RobsXSt != VeryLarge) && (RobsXFi != VeryLarge) && (RobsZSt != VeryLarge) && (RobsZFi != VeryLarge)) break; //OC190414
+	}
+
+	double MinRobsX = (RobsXSt < RobsXFi)? RobsXSt : RobsXFi; //OC test roll back 130208
+	double MinRobsZ = (RobsZSt < RobsZFi)? RobsZSt : RobsZFi;
+	double MinRobs = (MinRobsX < MinRobsZ)? MinRobsX : MinRobsZ;
+
+	//Estimating MaxRobs OC190414
+	pBtx = BtxArr; pBtz = BtzArr; pX = xArr; pZ = zArr;
+	RobsLoc = yStart - sStart;
+	InvRobsLoc = 1./RobsLoc;
+	MisFitXStLast = (xStart - *pX)*InvRobsLoc - *pBtx;
+	MisFitXFiLast = (xEnd - *pX)*InvRobsLoc - *pBtx;
+	MisFitZStLast = (zStart - *pZ)*InvRobsLoc - *pBtz;
+	MisFitZFiLast = (zEnd - *pZ)*InvRobsLoc - *pBtz;
+	RobsXSt = VeryLarge; RobsXFi = VeryLarge; RobsZSt = VeryLarge; RobsZFi = VeryLarge;
+
+	//for(int is=1; is<NpVsS; is++)
+	for(long long is=1; is<NpVsS; is++)
+	{
+		RobsLoc -= TrjDat.sStep;
+		InvRobsLoc = 1./RobsLoc;
+		pBtx++; pBtz++; pX++; pZ++;
+
+		if(RobsXSt == VeryLarge)
+		{
+			double MisFitXSt = (xStart - *pX)*InvRobsLoc - *pBtx;
+			if(MisFitXSt*MisFitXStLast < 0.) RobsXSt = RobsLoc;
+		}
+		if(RobsXFi == VeryLarge)
+		{
+			double MisFitXFi = (xEnd - *pX)*InvRobsLoc - *pBtx;
+			if(MisFitXFi*MisFitXFiLast < 0.) RobsXFi = RobsLoc;
 		}
 		if(RobsZSt == VeryLarge)
 		{
@@ -2220,20 +2427,27 @@ int srTSRWRadStructAccessData::FindAverageDistanceToSource(srTTrjDat& TrjDat, do
 			double MisFitZFi = (zEnd - *pZ)*InvRobsLoc - *pBtz;
 			if(MisFitZFi*MisFitZFiLast < 0.) RobsZFi = RobsLoc;
 		}
-		if(RobsZMid == VeryLarge)
-		{
-			double MisFitZMid = (midObsZ - *pZ)*InvRobsLoc - *pBtz;
-			if(MisFitZMid*MisFitZMidLast < 0.) RobsZMid = RobsLoc;
-		}
 	}
 
-	double MinRobsX = (RobsXSt < RobsXFi)? RobsXSt : RobsXFi; //OC test roll back 130208
-	double MinRobsZ = (RobsZSt < RobsZFi)? RobsZSt : RobsZFi;
+	double MaxRobsX = (RobsXSt < RobsXFi)? RobsXSt : RobsXFi; 
+	double MaxRobsZ = (RobsZSt < RobsZFi)? RobsZSt : RobsZFi;
+	double MaxRobs = (MinRobsX < MinRobsZ)? MaxRobsX : MaxRobsZ;
 
-	double MinRobs = (MinRobsX < MinRobsZ)? MinRobsX : MinRobsZ;
-	if(MinRobs != VeryLarge)
+	double Ravg = 0.5*(MinRobs + MaxRobs); //OC190414
+	if(MinRobs == VeryLarge)
 	{
-		Robs = MinRobs;
+		if(MaxRobs == VeryLarge) Ravg = VeryLarge;
+		else Ravg = MaxRobs;
+	}
+	else
+	{
+		if(MaxRobs == VeryLarge) Ravg = MinRobs;
+	}
+
+	//if(MinRobs != VeryLarge)
+	if(Ravg != VeryLarge)
+	{
+		Robs = Ravg;
 		RobsAbsErr = 0.25*sRange;
         Ysrc = yStart - Robs;
 	}
@@ -2246,7 +2460,8 @@ int srTSRWRadStructAccessData::FindAverageDistanceToSource(srTTrjDat& TrjDat, do
 		RobsAbsErr = 0.25*sRange;
 	}
 
-	int YsrcIndNo = (int)((Ysrc - sStart)/TrjDat.sStep + 0.00001);
+	//int YsrcIndNo = (int)((Ysrc - sStart)/TrjDat.sStep + 0.00001);
+	long long YsrcIndNo = (long long)((Ysrc - sStart)/TrjDat.sStep + 0.00001);
 	if(YsrcIndNo < 0) YsrcIndNo = 0;
 
 	if(YsrcIndNo >= NpVsS) YsrcIndNo = NpVsS - 1;
@@ -2276,28 +2491,36 @@ void srTSRWRadStructAccessData::AddStokesAtPoint(srTEXZ& EXZ, float* pStokesVal)
 	if((x < xStart - AbsEqStepTolX) || (x > xFinMin + AbsEqStepTolX)) return;
 	if((z < zStart - AbsEqStepTolZ) || (z > zFinMin + AbsEqStepTolZ)) return;
 
-	long ie = 0;
+	//long ie = 0;
+	long long ie = 0; //OC26042019
 	if(ne > 1)
 	{
-		ie = (long)((e - eStart)/eStep);
+		//ie = (long)((e - eStart)/eStep);
+		ie = (long long)((e - eStart)/eStep); //OC26042019
 		if(ie < 0) ie = 0;
 		else if(ie >= ne) ie = ne - 1;
 	}
-	long ixMin = 0, ixMax = 0;
+	//long ixMin = 0, ixMax = 0;
+	long long ixMin = 0, ixMax = 0;
 	if(nx > 1)
 	{
-		ixMin = (long)((x - xStart)/xStep);
+		//ixMin = (long)((x - xStart)/xStep);
+		ixMin = (long long)((x - xStart)/xStep); //OC26042019
         ixMax = ixMin + 1;
-		long nx_mi_1 = nx - 1;
+		//long nx_mi_1 = nx - 1;
+		long long nx_mi_1 = nx - 1;
 		if(ixMin < 0) { ixMin = ixMax = 0;}
 		else if(ixMin >= nx_mi_1) { ixMin = nx_mi_1; ixMax = ixMin;}
 	}
-	long izMin = 0, izMax = 0;
+	//long izMin = 0, izMax = 0;
+	long long izMin = 0, izMax = 0; //OC26042019
 	if(nz > 1)
 	{
-		izMin = (long)((z - zStart)/zStep);
+		//izMin = (long)((z - zStart)/zStep);
+		izMin = (long long)((z - zStart)/zStep); //OC26042019
         izMax = izMin + 1;
-		long nz_mi_1 = nz - 1;
+		//long nz_mi_1 = nz - 1;
+		long long nz_mi_1 = nz - 1; //OC26042019
 		if(izMin < 0) { izMin = izMax = 0;}
 		else if(izMin >= nz_mi_1) { izMin = nz_mi_1; izMax = izMin;}
 	}
@@ -2310,17 +2533,26 @@ void srTSRWRadStructAccessData::AddStokesAtPoint(srTEXZ& EXZ, float* pStokesVal)
 	if(zr < 0) zr = 0;
 	else if(zr > 1) zr = 1;
 
-	long PerX = ne << 1;
-	long PerZ = PerX*nx;
-	long TwoIe = ie << 1;
+	//long PerX = ne << 1;
+	//long PerZ = PerX*nx;
+	//long TwoIe = ie << 1;
+	long long PerX = ne << 1;
+	long long PerZ = PerX*nx;
+	long long TwoIe = ie << 1;
 
-	long ixMinPerX = ixMin*PerX, ixMaxPerX = ixMax*PerX;
-	long izMinPerZ = izMin*PerZ, izMaxPerZ = izMax*PerZ;
+	//long ixMinPerX = ixMin*PerX, ixMaxPerX = ixMax*PerX;
+	//long izMinPerZ = izMin*PerZ, izMaxPerZ = izMax*PerZ;
+	long long ixMinPerX = ixMin*PerX, ixMaxPerX = ixMax*PerX;
+	long long izMinPerZ = izMin*PerZ, izMaxPerZ = izMax*PerZ;
 
-	long Offset00 = izMinPerZ + ixMinPerX + TwoIe;
-	long Offset10 = izMinPerZ + ixMaxPerX + TwoIe;
-	long Offset01 = izMaxPerZ + ixMinPerX + TwoIe;
-	long Offset11 = izMaxPerZ + ixMaxPerX + TwoIe;
+	//long Offset00 = izMinPerZ + ixMinPerX + TwoIe;
+	//long Offset10 = izMinPerZ + ixMaxPerX + TwoIe;
+	//long Offset01 = izMaxPerZ + ixMinPerX + TwoIe;
+	//long Offset11 = izMaxPerZ + ixMaxPerX + TwoIe;
+	long long Offset00 = izMinPerZ + ixMinPerX + TwoIe;
+	long long Offset10 = izMinPerZ + ixMaxPerX + TwoIe;
+	long long Offset01 = izMaxPerZ + ixMinPerX + TwoIe;
+	long long Offset11 = izMaxPerZ + ixMaxPerX + TwoIe;
 
 	float ZeroArr[] = {0, 0};
 	float *pEx00, *pEz00, *pEx10, *pEz10, *pEx01, *pEz01, *pEx11, *pEz11;
@@ -2443,8 +2675,10 @@ void srTSRWRadStructAccessData::CheckAndResetPhaseTermsLin()
 void srTSRWRadStructAccessData::MirrorFieldData(int sx, int sz)
 {// sx < 0 means mirroring should be done vs x 
  // sz < 0 means mirroring should be done vs z 
-	long PerX = ne << 1;
-	long PerZ = PerX*nx;
+	//long PerX = ne << 1;
+	//long PerZ = PerX*nx;
+	long long PerX = ne << 1;
+	long long PerZ = PerX*nx;
 	float buf;
 	float *pEX0 = pBaseRadX;
 	float *pEZ0 = pBaseRadZ;
@@ -2452,23 +2686,31 @@ void srTSRWRadStructAccessData::MirrorFieldData(int sx, int sz)
 	if((sx > 0) && (sz > 0)) return; //no mirroring is necessary 
 	else if((sx < 0) && (sz > 0)) //mirroring with respect to x
 	{
-		long nx_mi_1 = nx - 1;
-		for(long ie=0; ie<ne; ie++)
+		//long nx_mi_1 = nx - 1;
+		long long nx_mi_1 = nx - 1; //OC26042019
+		for(long long ie=0; ie<ne; ie++)
+		//for(long ie=0; ie<ne; ie++)
 		{
-			long Two_ie = ie << 1;
-			for(long iz=0; iz<nz; iz++)
+			//long Two_ie = ie << 1;
+			long long Two_ie = ie << 1; //OC26042019
+			for(long long iz=0; iz<nz; iz++)
+			//for(long iz=0; iz<nz; iz++)
 			{
-				long izPerZ = iz*PerZ;
+				//long izPerZ = iz*PerZ;
+				long long izPerZ = iz*PerZ;
 				float *pEX_StartForX = pEX0 + izPerZ;
 				float *pEZ_StartForX = pEZ0 + izPerZ;
 
-				for(long ix=0; ix<(nx >> 1); ix++)
+				for(long long ix=0; ix<(nx >> 1); ix++) //OC26042019
+				//for(long ix=0; ix<(nx >> 1); ix++)
 				{
-					long ixPerX_p_Two_ie = ix*PerX + Two_ie;
+					//long ixPerX_p_Two_ie = ix*PerX + Two_ie;
+					long long ixPerX_p_Two_ie = ix*PerX + Two_ie;
 					float *pEX = pEX_StartForX + ixPerX_p_Two_ie;
 					float *pEZ = pEZ_StartForX + ixPerX_p_Two_ie;
 
-					long rev_ixPerX_p_Two_ie = (nx_mi_1 - ix)*PerX + Two_ie;
+					//long rev_ixPerX_p_Two_ie = (nx_mi_1 - ix)*PerX + Two_ie;
+					long long rev_ixPerX_p_Two_ie = (nx_mi_1 - ix)*PerX + Two_ie;
 					float *rev_pEX = pEX_StartForX + rev_ixPerX_p_Two_ie;
 					float *rev_pEZ = pEZ_StartForX + rev_ixPerX_p_Two_ie;
 
@@ -2488,23 +2730,31 @@ void srTSRWRadStructAccessData::MirrorFieldData(int sx, int sz)
 	}
 	else if((sx > 0) && (sz < 0))
 	{
-		long nz_mi_1 = nz - 1;
-		for(long ie=0; ie<ne; ie++)
+		//long nz_mi_1 = nz - 1;
+		//for(long ie=0; ie<ne; ie++)
+		long long nz_mi_1 = nz - 1; //OC26042019
+		for(long long ie=0; ie<ne; ie++)
 		{
-			long Two_ie = ie << 1;
-			for(long iz=0; iz<(nz >> 1); iz++)
+			//long Two_ie = ie << 1;
+			long long Two_ie = ie << 1;
+			for(long long iz=0; iz<(nz >> 1); iz++)
+			//for(long iz=0; iz<(nz >> 1); iz++)
 			{
-				long izPerZ = iz*PerZ;
+				//long izPerZ = iz*PerZ;
+				long long izPerZ = iz*PerZ;
 				float *pEX_StartForX = pEX0 + izPerZ;
 				float *pEZ_StartForX = pEZ0 + izPerZ;
 
-				long rev_izPerZ = (nz_mi_1 - iz)*PerZ;
+				//long rev_izPerZ = (nz_mi_1 - iz)*PerZ;
+				long long rev_izPerZ = (nz_mi_1 - iz)*PerZ;
 				float *rev_pEX_StartForX = pEX0 + rev_izPerZ;
 				float *rev_pEZ_StartForX = pEZ0 + rev_izPerZ;
 
-				for(long ix=0; ix<nx; ix++)
+				for(long long ix=0; ix<nx; ix++)
+				//for(long ix=0; ix<nx; ix++)
 				{
-					long ixPerX_p_Two_ie = ix*PerX + Two_ie;
+					//long ixPerX_p_Two_ie = ix*PerX + Two_ie;
+					long long ixPerX_p_Two_ie = ix*PerX + Two_ie;
 					float *pEX = pEX_StartForX + ixPerX_p_Two_ie;
 					float *pEZ = pEZ_StartForX + ixPerX_p_Two_ie;
 
@@ -2527,28 +2777,38 @@ void srTSRWRadStructAccessData::MirrorFieldData(int sx, int sz)
 	}
 	else
 	{
-		long nx_mi_1 = nx - 1;
-		long nz_mi_1 = nz - 1;
-		for(long ie=0; ie<ne; ie++)
+		//long nx_mi_1 = nx - 1;
+		//long nz_mi_1 = nz - 1;
+		long long nx_mi_1 = nx - 1; //OC26042019
+		long long nz_mi_1 = nz - 1;
+		for(long long ie=0; ie<ne; ie++) //OC26042019
+		//for(long ie=0; ie<ne; ie++)
 		{
-			long Two_ie = ie << 1;
-			for(long iz=0; iz<(nz >> 1); iz++)
+			//long Two_ie = ie << 1;
+			//for(long iz=0; iz<(nz >> 1); iz++)
+			long long Two_ie = ie << 1; //OC26042019
+			for(long long iz=0; iz<(nz >> 1); iz++)
 			{
-				long izPerZ = iz*PerZ;
+				//long izPerZ = iz*PerZ;
+				long long izPerZ = iz*PerZ;
 				float *pEX_StartForX = pEX0 + izPerZ;
 				float *pEZ_StartForX = pEZ0 + izPerZ;
 
-				long rev_izPerZ = (nz_mi_1 - iz)*PerZ;
+				//long rev_izPerZ = (nz_mi_1 - iz)*PerZ;
+				long long rev_izPerZ = (nz_mi_1 - iz)*PerZ;
 				float *rev_pEX_StartForX = pEX0 + rev_izPerZ;
 				float *rev_pEZ_StartForX = pEZ0 + rev_izPerZ;
 
-				for(long ix=0; ix<nx; ix++)
+				for(long long ix=0; ix<nx; ix++) //OC26042019
+				//for(long ix=0; ix<nx; ix++)
 				{
-					long ixPerX_p_Two_ie = ix*PerX + Two_ie;
+					//long ixPerX_p_Two_ie = ix*PerX + Two_ie;
+					long long ixPerX_p_Two_ie = ix*PerX + Two_ie;
 					float *pEX = pEX_StartForX + ixPerX_p_Two_ie;
 					float *pEZ = pEZ_StartForX + ixPerX_p_Two_ie;
 
-					long rev_ixPerX_p_Two_ie = (nx_mi_1 - ix)*PerX + Two_ie;
+					//long rev_ixPerX_p_Two_ie = (nx_mi_1 - ix)*PerX + Two_ie;
+					long long rev_ixPerX_p_Two_ie = (nx_mi_1 - ix)*PerX + Two_ie;
 					float *rev_pEX = rev_pEX_StartForX + rev_ixPerX_p_Two_ie;
 					float *rev_pEZ = rev_pEZ_StartForX + rev_ixPerX_p_Two_ie;
 
@@ -2566,17 +2826,20 @@ void srTSRWRadStructAccessData::MirrorFieldData(int sx, int sz)
 			}
 			if(((nz >> 1) << 1) != nz)
 			{
-				long izPerZ = ((nz >> 1) + 1)*PerZ;
+				//long izPerZ = ((nz >> 1) + 1)*PerZ;
+				long long izPerZ = ((nz >> 1) + 1)*PerZ;
 				float *pEX_StartForX = pEX0 + izPerZ;
 				float *pEZ_StartForX = pEZ0 + izPerZ;
 
 				for(long ix=0; ix<(nx >> 1); ix++)
 				{
-					long ixPerX_p_Two_ie = ix*PerX + Two_ie;
+					//long ixPerX_p_Two_ie = ix*PerX + Two_ie;
+					long long ixPerX_p_Two_ie = ix*PerX + Two_ie;
 					float *pEX = pEX_StartForX + ixPerX_p_Two_ie;
 					float *pEZ = pEZ_StartForX + ixPerX_p_Two_ie;
 
-					long rev_ixPerX_p_Two_ie = (nx_mi_1 - ix)*PerX + Two_ie;
+					//long rev_ixPerX_p_Two_ie = (nx_mi_1 - ix)*PerX + Two_ie;
+					long long rev_ixPerX_p_Two_ie = (nx_mi_1 - ix)*PerX + Two_ie;
 					float *rev_pEX = pEX_StartForX + rev_ixPerX_p_Two_ie;
 					float *rev_pEZ = pEZ_StartForX + rev_ixPerX_p_Two_ie;
 
@@ -2609,22 +2872,28 @@ int srTSRWRadStructAccessData::ExtractSliceConstEorT(long ie, float*& pOutEx, fl
 		return 0;
 	}
 
-	long PerX = ne << 1;
-	long PerZ = PerX*nx;
+	//long PerX = ne << 1;
+	//long PerZ = PerX*nx;
+	long long PerX = ne << 1;
+	long long PerZ = PerX*nx;
 
-	long izPerZ = 0;
-	long iePerE = ie << 1;
+	//long izPerZ = 0;
+	//long iePerE = ie << 1;
+	long long izPerZ = 0;
+	long long iePerE = ie << 1;
 
 	float *tOutEx = pOutEx, *tOutEz = pOutEz;
 	for(int iz=0; iz<nz; iz++)
 	{
 		float *pEx_StartForX = pEx0 + izPerZ;
 		float *pEz_StartForX = pEz0 + izPerZ;
-		long ixPerX = 0;
+		//long ixPerX = 0;
+		long long ixPerX = 0;
 
 		for(int ix=0; ix<nx; ix++)
 		{
-			long ixPerX_p_iePerE = ixPerX + iePerE;
+			//long ixPerX_p_iePerE = ixPerX + iePerE;
+			long long ixPerX_p_iePerE = ixPerX + iePerE;
 			float *pEx = pEx_StartForX + ixPerX_p_iePerE;
 			float *pEz = pEz_StartForX + ixPerX_p_iePerE;
 
@@ -2644,22 +2913,28 @@ int srTSRWRadStructAccessData::SetupSliceConstEorT(long ie, float* pInEx, float*
 {
 	float *pEx0 = pBaseRadX;
 	float *pEz0 = pBaseRadZ;
-	long PerX = ne << 1;
-	long PerZ = PerX*nx;
+	//long PerX = ne << 1;
+	//long PerZ = PerX*nx;
+	long long PerX = ne << 1;
+	long long PerZ = PerX*nx;
 
-	long izPerZ = 0;
-	long iePerE = ie << 1;
+	//long izPerZ = 0;
+	//long iePerE = ie << 1;
+	long long izPerZ = 0;
+	long long iePerE = ie << 1;
 
 	float *tInEx = pInEx, *tInEz = pInEz;
 	for(int iz=0; iz<nz; iz++)
 	{
 		float *pEx_StartForX = pEx0 + izPerZ;
 		float *pEz_StartForX = pEz0 + izPerZ;
-		long ixPerX = 0;
+		//long ixPerX = 0;
+		long long ixPerX = 0;
 
 		for(int ix=0; ix<nx; ix++)
 		{
-			long ixPerX_p_iePerE = ixPerX + iePerE;
+			//long ixPerX_p_iePerE = ixPerX + iePerE;
+			long long ixPerX_p_iePerE = ixPerX + iePerE;
 			float *pEx = pEx_StartForX + ixPerX_p_iePerE;
 			float *pEz = pEz_StartForX + ixPerX_p_iePerE;
 
@@ -2745,8 +3020,10 @@ int srTSRWRadStructAccessData::SetupWfrEdgeCorrData(float* pDataEx, float* pData
 		DataPtrsForWfrEdgeCorr.dx = xStep;
 		DataPtrsForWfrEdgeCorr.dz = zStep;
 
-		long TwoNx = nx << 1;
-		long TwoNz = nz << 1;
+		//long TwoNx = nx << 1;
+		//long TwoNz = nz << 1;
+		long long TwoNx = nx << 1; //OC26042019
+		long long TwoNz = nz << 1;
 
 		if(dxSt != 0.)
 		{
@@ -3006,6 +3283,393 @@ void srTSRWRadStructAccessData::MakeWfrEdgeCorrection(float* pDataEx, float* pDa
 
 //*************************************************************************
 
+int srTSRWRadStructAccessData::ShiftWfrByInterpolVsXZ(double shiftX, double shiftZ)
+{//Shift the wavefront E-field data by interpolation, in whatever representation (coord. of ang.), keeping same mesh
+ //Note: it also modifies xc, zc (requires for best treatment of quadratic phase term) !
+
+	//long nTot = (ne << 1)*nx*nz;
+	long long nTot = (ne << 1)*((long long)nx)*((long long)nz);
+	float *pAuxBaseRadX = 0;
+	float *pAuxBaseRadZ = 0;
+	if(pBaseRadX != 0) 
+	{
+		pAuxBaseRadX = new float[nTot];
+		float *tAuxBaseRadX = pAuxBaseRadX;
+		//for(long i=0; i<nTot; i++) *(tAuxBaseRadX++) = 0;
+		for(long long i=0; i<nTot; i++) *(tAuxBaseRadX++) = 0;
+	}
+	if(pBaseRadZ != 0)
+	{
+		pAuxBaseRadZ = new float[nTot];
+		float *tAuxBaseRadZ = pAuxBaseRadZ;
+		//for(long i=0; i<nTot; i++) *(tAuxBaseRadZ++) = 0;
+		for(long long i=0; i<nTot; i++) *(tAuxBaseRadZ++) = 0;
+	}
+
+	char PolComp = -1;
+	bool WaveFrontTermWasTreated = false;
+	if(QuadPhaseTermCanBeTreated())
+	{
+		if(pBaseRadX != 0)
+		{
+			if(pBaseRadZ != 0) PolComp = 0;
+			else PolComp = 'x';
+		}
+		else if(pBaseRadZ != 0) PolComp = 'z';
+		
+		TreatQuadPhaseTermTerm('r', PolComp);
+		WaveFrontTermWasTreated = true;
+	}
+
+	//long PerX = ne << 1;
+	//long PerZ = PerX*nx;
+	long long PerX = ne << 1;
+	long long PerZ = PerX*nx;
+	//long nx_mi_1 = nx - 1;
+	//long nz_mi_1 = nz - 1;
+	long long nx_mi_1 = nx - 1; //OC26042019
+	long long nz_mi_1 = nz - 1;
+	double arF[5];
+
+	for(long long ie=0; ie<ne; ie++) //OC26042019
+	//for(long ie=0; ie<ne; ie++)
+	{
+		//long Two_ie = ie << 1;
+		long long Two_ie = ie << 1; //OC26042019
+		double z = zStart - shiftZ;
+
+		for(long long iz=0; iz<nz; iz++) //OC26042019
+		//for(long iz=0; iz<nz; iz++)
+		{
+			//long izPerZ = iz*PerZ;
+			long long izPerZ = iz*PerZ;
+			float *pEX_NewStartForX = pAuxBaseRadX + izPerZ;
+			float *pEZ_NewStartForX = pAuxBaseRadZ + izPerZ;
+
+			double d_izOld = (z - zStart)/zStep;
+			if((d_izOld < 0) || (d_izOld > nz_mi_1)) 
+			{
+				z += zStep; continue;
+			}
+
+			//long izOld = (long)d_izOld;
+			long long izOld = (long long)d_izOld; //OC26042019
+			if((d_izOld - izOld) >= 0.5) izOld++;
+			if(izOld < 0) izOld = 0;
+			else if(izOld > nz_mi_1) izOld = nz_mi_1;
+
+			//long izOld_mi_1 = izOld - 1;
+			long long izOld_mi_1 = izOld - 1; //OC26042019
+			if(izOld_mi_1 < 0) izOld_mi_1 = 0;
+			//long izOld_pl_1 = izOld + 1;
+			long long izOld_pl_1 = izOld + 1; //OC26042019
+			if(izOld_pl_1 > nz_mi_1) izOld_pl_1 = nz_mi_1;
+
+			double rz = z - (zStart + izOld*zStep);
+			double zt = (zStep > 0)? rz/zStep : 0.;
+
+			//long izOld_PerZ = izOld*PerZ;
+			//long izOld_mi_1_PerZ = izOld_mi_1*PerZ;
+			//long izOld_pl_1_PerZ = izOld_pl_1*PerZ;
+			long long izOld_PerZ = izOld*PerZ;
+			long long izOld_mi_1_PerZ = izOld_mi_1*PerZ;
+			long long izOld_pl_1_PerZ = izOld_pl_1*PerZ;
+
+			double x = xStart - shiftX;
+
+			for(long ix=0; ix<nx; ix++)
+			{
+				//long ixPerX_p_Two_ie = ix*PerX + Two_ie; //offset for the new data
+				long long ixPerX_p_Two_ie = ix*PerX + Two_ie; //offset for the new data
+				float *pEX_New = pEX_NewStartForX + ixPerX_p_Two_ie;
+				float *pEZ_New = pEZ_NewStartForX + ixPerX_p_Two_ie;
+
+				double d_ixOld = (x - xStart)/xStep;
+				if((d_ixOld < 0) || (d_ixOld > nx_mi_1)) 
+				{
+					x += xStep; continue;
+				}
+
+				//long ixOld = (long)d_ixOld;
+				long long ixOld = (long long)d_ixOld; //OC26042019
+				if((d_ixOld - ixOld) >= 0.5) ixOld++;
+				if(ixOld < 0) ixOld = 0;
+				else if(ixOld > nx_mi_1) ixOld = nx_mi_1;
+
+				//long ixOld_mi_1 = ixOld - 1;
+				long long ixOld_mi_1 = ixOld - 1; //OC26042019
+				if(ixOld_mi_1 < 0) ixOld_mi_1 = 0;
+				//long ixOld_pl_1 = ixOld + 1;
+				long long ixOld_pl_1 = ixOld + 1; //OC26042019
+				if(ixOld_pl_1 > nx_mi_1) ixOld_pl_1 = nx_mi_1;
+
+				double rx = x - (xStart + ixOld*xStep);
+				double xt = (xStep > 0)? rx/xStep : 0.;
+
+				//long ixOld_PerX = ixOld*PerX;
+				//long ixOld_mi_1_PerX = ixOld_mi_1*PerX;
+				//long ixOld_pl_1_PerX = ixOld_pl_1*PerX;
+				long long ixOld_PerX = ixOld*PerX;
+				long long ixOld_mi_1_PerX = ixOld_mi_1*PerX;
+				long long ixOld_pl_1_PerX = ixOld_pl_1*PerX;
+				
+				//long ofstOld_0m1 = ixOld_PerX + izOld_mi_1_PerZ + Two_ie; //offset for the new data
+				//long ofstOld_m10 = ixOld_mi_1_PerX + izOld_PerZ + Two_ie;
+				//long ofstOld_00 = ixOld_PerX + izOld_PerZ + Two_ie;
+				//long ofstOld_10 = ixOld_pl_1_PerX + izOld_PerZ + Two_ie;
+				//long ofstOld_01 = ixOld_PerX + izOld_pl_1_PerZ + Two_ie;
+				long long ofstOld_0m1 = ixOld_PerX + izOld_mi_1_PerZ + Two_ie; //offset for the new data
+				long long ofstOld_m10 = ixOld_mi_1_PerX + izOld_PerZ + Two_ie;
+				long long ofstOld_00 = ixOld_PerX + izOld_PerZ + Two_ie;
+				long long ofstOld_10 = ixOld_pl_1_PerX + izOld_PerZ + Two_ie;
+				long long ofstOld_01 = ixOld_PerX + izOld_pl_1_PerZ + Two_ie;
+
+				//long ofstOld_0m1_p1 = ofstOld_0m1 + 1; //offset for the new data
+				//long ofstOld_m10_p1 = ofstOld_m10 + 1;
+				//long ofstOld_00_p1 = ofstOld_00 + 1;
+				//long ofstOld_10_p1 = ofstOld_10 + 1;
+				//long ofstOld_01_p1 = ofstOld_01 + 1;
+				long long ofstOld_0m1_p1 = ofstOld_0m1 + 1; //offset for the new data
+				long long ofstOld_m10_p1 = ofstOld_m10 + 1;
+				long long ofstOld_00_p1 = ofstOld_00 + 1;
+				long long ofstOld_10_p1 = ofstOld_10 + 1;
+				long long ofstOld_01_p1 = ofstOld_01 + 1;
+
+				if(pBaseRadX != 0)
+				{
+					double *t_arF = arF;
+					*(t_arF++) = pBaseRadX[ofstOld_0m1]; //double f0m1 = *(arF++);
+					*(t_arF++) = pBaseRadX[ofstOld_m10]; //double fm10 = *(arF++);
+					*(t_arF++) = pBaseRadX[ofstOld_00]; //double f00 = *(arF++);
+					*(t_arF++) = pBaseRadX[ofstOld_10]; //double f10 = *(arF++);
+					*(t_arF++) = pBaseRadX[ofstOld_01]; //double f01 = *arF;
+					*pEX_New = (float)CGenMathInterp::Interp2dBiQuad5Rec(xt, zt, arF);
+					//OCTEST
+					//*pEX_New = (float)pBaseRadX[ofstOld_00];
+
+					t_arF = arF;
+					*(t_arF++) = pBaseRadX[ofstOld_0m1_p1]; //double f0m1 = *(arF++);
+					*(t_arF++) = pBaseRadX[ofstOld_m10_p1]; //double fm10 = *(arF++);
+					*(t_arF++) = pBaseRadX[ofstOld_00_p1]; //double f00 = *(arF++);
+					*(t_arF++) = pBaseRadX[ofstOld_10_p1]; //double f10 = *(arF++);
+					*(t_arF++) = pBaseRadX[ofstOld_01_p1]; //double f01 = *arF;
+					*(pEX_New + 1) = (float)CGenMathInterp::Interp2dBiQuad5Rec(xt, zt, arF);
+					//OCTEST
+					//*(pEX_New + 1) = (float)pBaseRadX[ofstOld_00_p1];
+				}
+				if(pBaseRadZ != 0)
+				{
+					double *t_arF = arF;
+					*(t_arF++) = pBaseRadZ[ofstOld_0m1]; //double f0m1 = *(arF++);
+					*(t_arF++) = pBaseRadZ[ofstOld_m10]; //double fm10 = *(arF++);
+					*(t_arF++) = pBaseRadZ[ofstOld_00]; //double f00 = *(arF++);
+					*(t_arF++) = pBaseRadZ[ofstOld_10]; //double f10 = *(arF++);
+					*(t_arF++) = pBaseRadZ[ofstOld_01]; //double f01 = *arF;
+					*pEZ_New = (float)CGenMathInterp::Interp2dBiQuad5Rec(xt, zt, arF);
+					//OCTEST
+					//*pEZ_New = (float)pBaseRadZ[ofstOld_00];
+
+					t_arF = arF;
+					*(t_arF++) = pBaseRadZ[ofstOld_0m1_p1]; //double f0m1 = *(arF++);
+					*(t_arF++) = pBaseRadZ[ofstOld_m10_p1]; //double fm10 = *(arF++);
+					*(t_arF++) = pBaseRadZ[ofstOld_00_p1]; //double f00 = *(arF++);
+					*(t_arF++) = pBaseRadZ[ofstOld_10_p1]; //double f10 = *(arF++);
+					*(t_arF++) = pBaseRadZ[ofstOld_01_p1]; //double f01 = *arF;
+					*(pEZ_New + 1) = (float)CGenMathInterp::Interp2dBiQuad5Rec(xt, zt, arF);
+					//OCTEST
+					//*(pEZ_New + 1) = (float)pBaseRadZ[ofstOld_00_p1];
+				}
+				x += xStep;
+			}
+			z += zStep;
+		}
+	}
+
+	if(pBaseRadX != 0) 
+	{
+		float *tAuxRadX = pAuxBaseRadX, *tRadX = pBaseRadX;
+		//for(long i=0; i<nTot; i++) *(tRadX++) = *(tAuxRadX++);
+		for(long long i=0; i<nTot; i++) *(tRadX++) = *(tAuxRadX++);
+	}
+	if(pBaseRadZ != 0) 
+	{
+		float *tAuxRadZ = pAuxBaseRadZ, *tRadZ = pBaseRadZ;
+		//for(long i=0; i<nTot; i++) *(tRadZ++) = *(tAuxRadZ++);
+		for(long long i=0; i<nTot; i++) *(tRadZ++) = *(tAuxRadZ++);
+	}
+
+	//OC180813: don't correct it here; will be corrected in sep. function
+	xc += shiftX; 
+	zc += shiftZ;
+
+	if(WaveFrontTermWasTreated) TreatQuadPhaseTermTerm('a', PolComp);
+
+	//OC180813: don't correct it here; will be corrected in sep. function
+	xc -= shiftX; 
+	zc -= shiftZ;
+
+	if(pAuxBaseRadX != 0) delete[] pAuxBaseRadX;
+	if(pAuxBaseRadZ != 0) delete[] pAuxBaseRadZ;
+	return 0;
+}
+
+//*************************************************************************
+
+void srTSRWRadStructAccessData::FlipFieldData(bool flipOverX, bool flipOverZ)
+{
+	//long PerX = ne << 1;
+	//long PerZ = PerX*nx;
+	long long PerX = ne << 1;
+	long long PerZ = PerX*nx;
+
+	//long halfNz = nz >> 1, nz_mi_1 = nz - 1;
+	//long halfNx = nx >> 1, nx_mi_1 = nx - 1;
+	long long halfNz = nz >> 1, nz_mi_1 = nz - 1; //OC26042019
+	long long halfNx = nx >> 1, nx_mi_1 = nx - 1;
+
+	bool treatEx = (pBaseRadX != 0);
+	bool treatEz = (pBaseRadZ != 0);
+
+	if(flipOverZ)
+	{
+		if(flipOverX)
+		{
+			for(long iz=0; iz<halfNz; iz++)
+			{
+				//long izPerZ = iz*PerZ;
+				long long izPerZ = iz*PerZ;
+				for(long ix=0; ix<halfNx; ix++)
+				{
+					//long offset = izPerZ + ix*PerX;
+					long long offset = izPerZ + ix*PerX;
+					float* pOrigDataEx = pBaseRadX + offset;
+					float* pOrigDataEz = pBaseRadZ + offset;
+
+					//long offsetSym = izPerZ + (nx_mi_1 - ix)*PerX;
+					long long offsetSym = izPerZ + (nx_mi_1 - ix)*PerX;
+					float* pSymDataEx = pBaseRadX + offsetSym;
+					float* pSymDataEz = pBaseRadZ + offsetSym;
+					SwapDataInEnergySlice(pOrigDataEx, pOrigDataEz, pSymDataEx, pSymDataEz, treatEx, treatEz);
+				}
+			}
+		}
+		for(long iz=0; iz<halfNz; iz++)
+		{
+			//long izPerZ = iz*PerZ, BufZ = (nz_mi_1 - iz)*PerZ;
+			long long izPerZ = iz*PerZ, BufZ = (nz_mi_1 - iz)*PerZ;
+			for(long ix=0; ix<nx; ix++)
+			{			
+				//long ixPerX = ix*PerX;
+				//long offset = izPerZ + ixPerX;
+				long long ixPerX = ix*PerX;
+				long long offset = izPerZ + ixPerX;
+				float* pOrigDataEx = pBaseRadX + offset;
+				float* pOrigDataEz = pBaseRadZ + offset;
+
+				//long offsetSym = BufZ + ixPerX;
+				long long offsetSym = BufZ + ixPerX;
+				float* pSymDataEx = pBaseRadX + offsetSym;
+				float* pSymDataEz = pBaseRadZ + offsetSym;
+				SwapDataInEnergySlice(pOrigDataEx, pOrigDataEz, pSymDataEx, pSymDataEz, treatEx, treatEz);
+			}
+		}
+	}
+	else if(flipOverX)
+	{
+		for(long iz=0; iz<nz; iz++)
+		{
+			//long izPerZ = iz*PerZ;
+			long long izPerZ = iz*PerZ;
+			for(long ix=0; ix<halfNx; ix++)
+			{
+				//long offset = izPerZ + ix*PerX;
+				long long offset = izPerZ + ix*PerX;
+				float* pOrigDataEx = pBaseRadX + offset;
+				float* pOrigDataEz = pBaseRadZ + offset;
+
+				//long offsetSym = izPerZ + (nx_mi_1 - ix)*PerX;
+				long long offsetSym = izPerZ + (nx_mi_1 - ix)*PerX;
+				float* pSymDataEx = pBaseRadX + offsetSym;
+				float* pSymDataEz = pBaseRadZ + offsetSym;
+				SwapDataInEnergySlice(pOrigDataEx, pOrigDataEz, pSymDataEx, pSymDataEz, treatEx, treatEz);
+			}
+		}
+	}
+}
+
+//*************************************************************************
+
+void srTSRWRadStructAccessData::TransposeFieldData()
+{//To improve (make more memory-economic version)
+
+	double xStartOld = xStart, xStepOld = xStep;
+	long nxOld = nx;
+	//long long nxOld = nx; //OC26042019
+	xStart = zStart; xStep = zStep; nx = nz;
+	zStart = xStartOld; zStep = xStepOld; nz = nxOld;
+
+	//long PerX = ne << 1;
+	//long PerZ = PerX*nx;
+	long long PerX = ne << 1;
+	long long PerZ = PerX*nx;
+
+	//long nTot = (ne << 1)*nx*nz;
+	long long nTot = (ne << 1)*((long long)nx)*((long long)nz);
+	float *arE = new float[nTot];
+
+	if(pBaseRadX != 0)
+	{
+		float *t_arE = arE;
+		float *t_pRad = pBaseRadX;
+		//for(long i=0; i<nTot; i++) *(t_arE++) = *(t_pRad++);
+		for(long long i=0; i<nTot; i++) *(t_arE++) = *(t_pRad++);
+
+		t_arE = arE;
+		for(long ix = 0; ix < nx; ix++)
+		{
+			for(long iz = 0; iz < nz; iz++)
+			{
+				//long ofst0 = iz*PerZ + ix*PerX;
+				long long ofst0 = iz*PerZ + ix*PerX;
+				for(long ie = 0; ie < ne; ie++)
+				{
+					//long ofst = ofst0 + (ie << 1);
+					long long ofst = ofst0 + (ie << 1);
+					*(pBaseRadX + ofst) = *(t_arE++);
+					*(pBaseRadX + ofst + 1) = *(t_arE++);
+				}
+			}
+		}
+	}
+	if(pBaseRadZ != 0)
+	{
+		float *t_arE = arE;
+		float *t_pRad = pBaseRadZ;
+		//for(long i=0; i<nTot; i++) *(t_arE++) = *(t_pRad++);
+		for(long long i=0; i<nTot; i++) *(t_arE++) = *(t_pRad++);
+
+		t_arE = arE;
+		for(long ix = 0; ix < nx; ix++)
+		{
+			for(long iz = 0; iz < nz; iz++)
+			{
+				//long ofst0 = iz*PerZ + ix*PerX;
+				long long ofst0 = iz*PerZ + ix*PerX;
+				for(long ie = 0; ie < ne; ie++)
+				{
+					//long ofst = ofst0 + (ie << 1);
+					long long ofst = ofst0 + (ie << 1);
+					*(pBaseRadZ + ofst) = *(t_arE++);
+					*(pBaseRadZ + ofst + 1) = *(t_arE++);
+				}
+			}
+		}
+	}
+	if(arE != 0) delete[] arE;
+}
+
+//*************************************************************************
+
 int srTSRWRadStructAccessData::SetRepresCA(char CoordOrAng)
 {//Copied from srTGenOptElem::SetRadRepres(srTSRWRadStructAccessData*, char);
 // 'c' or 'C' or 0- to coord.; 'a' or 'A' or 1- to ang.
@@ -3040,6 +3704,8 @@ int srTSRWRadStructAccessData::SetRepresCA(char CoordOrAng)
 //End New
 
 	CGenMathFFT2D FFT2D;
+	const double constPhotEnWavelenConv = 1.239842e-06;
+	double avgWaveLength_m = 0.;
 
 	if(ne == 1)
 	{
@@ -3050,6 +3716,20 @@ int srTSRWRadStructAccessData::SetRepresCA(char CoordOrAng)
 			{
 				if(result = SetupWfrEdgeCorrData(pBaseRadX, pBaseRadZ, DataPtrsForWfrEdgeCorr)) return result;
 			}
+		}
+
+		if(ElecFldAngUnit == 1) //OC20112017
+		{
+			double avgPhotEnLoc = (PresT == 0)? eStart : avgPhotEn;
+			avgWaveLength_m = constPhotEnWavelenConv/avgPhotEnLoc;
+			if(CoordOrAng == 0)
+			{
+				FFT2DInfo.ExtraMult = avgWaveLength_m;
+				double multArg = 1./avgWaveLength_m;
+				FFT2DInfo.xStart *= multArg; FFT2DInfo.xStep *= multArg;
+				FFT2DInfo.yStart *= multArg; FFT2DInfo.yStep *= multArg;
+			}
+			else FFT2DInfo.ExtraMult = 1./avgWaveLength_m;
 		}
 
 		FFT2DInfo.pData = pBaseRadX;
@@ -3071,7 +3751,22 @@ int srTSRWRadStructAccessData::SetRepresCA(char CoordOrAng)
 	}
 	else
 	{
-		long TwoNxNz = (nx*nz) << 1;
+		if(ElecFldAngUnit == 1) //OC20112017
+		{
+			double avgPhotEnLoc = (PresT == 0)? (eStart + 0.5*ne*eStep) : avgPhotEn;
+			avgWaveLength_m = constPhotEnWavelenConv/avgPhotEnLoc;
+			if(CoordOrAng == 0)
+			{
+				FFT2DInfo.ExtraMult = avgWaveLength_m; //NOTE: this may be incorrect for large bandwidth !?
+				double multArg = 1./avgWaveLength_m;
+				FFT2DInfo.xStart *= multArg; FFT2DInfo.xStep *= multArg;
+				FFT2DInfo.yStart *= multArg; FFT2DInfo.yStep *= multArg;
+			}
+			else FFT2DInfo.ExtraMult = 1./avgWaveLength_m; //NOTE: this may be incorrect for large bandwidth !?
+		}
+
+		//long TwoNxNz = (nx*nz) << 1;
+		long long TwoNxNz = (((long long)nx)*((long long)nz)) << 1;
 		float* AuxEx = new float[TwoNxNz];
 		if(AuxEx == 0) return MEMORY_ALLOCATION_FAILURE;
 		float* AuxEz = new float[TwoNxNz];
@@ -3118,6 +3813,14 @@ int srTSRWRadStructAccessData::SetRepresCA(char CoordOrAng)
 	zStep = FFT2DInfo.yStepTr;
 	xStart = FFT2DInfo.xStartTr;
 	zStart = FFT2DInfo.yStartTr;
+
+	if((ElecFldAngUnit == 1) && (CoordOrAng == 1)) //OC20112017
+	{
+		double multArg = avgWaveLength_m;
+		xStart *= multArg; xStep *= multArg;
+		zStart *= multArg; zStep *= multArg;
+	}
+
 	Pres = CoordOrAng;
 
 	SetNonZeroWavefrontLimitsToFullRange();
@@ -3143,16 +3846,21 @@ int srTSRWRadStructAccessData::SetRepresFT(char FreqOrTime)
 	//char DirFFT = (FreqOrTime == 0)? -1 : 1;
 
 	const double multConvHz2eV = 4.135667175e-15;
-	const double multConv_eV2PhperBW = 6.24146e+15;
+	//const double multConv_eV2PhperBW = 6.24146e+15;
+	double multConv_eV2PhperBW = 6.24146e+15; 
+	if(ElecFldUnit == 2) multConv_eV2PhperBW = 1; //OC170813
 
 	//default- to time:
 	double normArgConv = multConvHz2eV;
 	//double multPreInt = sqrt(multConvHz2eV);
 	double multPreInt = sqrt(multConvHz2eV/multConv_eV2PhperBW);
 
-	char DirFFT = -1; //1; //OCTEST111211
+	//char DirFFT = -1; //1; //OCTEST111211
+	char DirFFT = 1; //OC041215
+
 	double shiftArgBefore = -avgPhotEn;
-	double shiftArgAfter = 0;
+	//double shiftArgAfter = 0;
+	double shiftArgAfter = avgT; //OC101115 (Need to define it prior to this!)
 
 	if(FreqOrTime == 0) //to Frequency
 	{
@@ -3161,8 +3869,13 @@ int srTSRWRadStructAccessData::SetRepresFT(char FreqOrTime)
 		//multPreInt *= sqrt(multConv_eV2PhperBW);
 
 		multPreInt = sqrt(multConvHz2eV*multConv_eV2PhperBW);
-		DirFFT = 1; //-1; //OCTEST111211
-		shiftArgBefore = 0;
+		//DirFFT = 1; //-1; //OCTEST111211
+		DirFFT = -1; //OC041215
+
+		avgT = eStart + 0.5*eStep*(ne - 1); //OC101115 //???
+
+		//shiftArgBefore = 0;
+		shiftArgBefore = -avgT; //OC101115
 		shiftArgAfter = avgPhotEn;
 	}
 
@@ -3170,7 +3883,7 @@ int srTSRWRadStructAccessData::SetRepresFT(char FreqOrTime)
 	FFT1DInfo.xStep = eStep/normArgConv; //[s] or [eV]
 	FFT1DInfo.xStart = (eStart + shiftArgBefore)/normArgConv; //[s] or [eV]
 	FFT1DInfo.Nx = ne;
-	FFT1DInfo.HowMany = nx*nz;
+	FFT1DInfo.HowMany = nx*nz; //May result in overflow?
 	FFT1DInfo.Dir = DirFFT;
 	FFT1DInfo.UseGivenStartTrValue = 0;
 	FFT1DInfo.MultExtra = multPreInt; //1./multConv; //???
@@ -3192,8 +3905,15 @@ int srTSRWRadStructAccessData::SetRepresFT(char FreqOrTime)
 
 	eStep = FFT1DInfo.xStepTr;
 	eStart = FFT1DInfo.xStartTr + shiftArgAfter;
-	PresT = FreqOrTime;
 
+	if(FreqOrTime == 1) //to Time
+	{//OC101015 //???
+		double tCenAux = eStart + 0.5*eStep*(ne - 1);
+		double tShiftAux = avgT - tCenAux;
+		eStart += tShiftAux;
+	}
+
+	PresT = FreqOrTime;
 	return result;
 }
 
@@ -3205,4 +3925,421 @@ int srTSRWRadStructAccessData::ComputeRadMoments()
 	return GenOptElem.ComputeRadMoments(this);
 }
 
+//*************************************************************************
+
+bool srTSRWRadStructAccessData::CheckIfQuadTermTreatIsBenefit(char cutX_or_Z, char fldX_or_Z)
+{
+	if((pBaseRadX == 0) && (pBaseRadZ == 0)) return false;
+
+	if((Pres != 0) && (PresT != 0)) return true; //this test is currently imlemented only for the Coordinate-Frequency domain (other cases to consider)
+
+	//long ieCen = 0;
+	long long ieCen = 0;
+	if(ne > 1) ieCen = ne >> 1;
+	double eCen = eStart + eStep*ieCen;
+	double halfWaveNum = 0.5*(5.06773065E+06)*eCen; //Pi/lambda_m
+
+	//long ofst0, per;
+	long long ofst0, per;
+	double argStep, argStart; //argN;
+	long long argN; //OC26042019
+	double argCen, argR;
+
+	if((cutX_or_Z == 'x') || (cutX_or_Z == 'X'))
+	{
+		per = ne << 1;
+
+		//long nOtherMi1 = nz - 1;
+		long long nOtherMi1 = nz - 1; //OC26042019
+		double dicOther = (zc - zStart)/zStep;
+		//long icOther = (long)dicOther;
+		long long icOther = (long long)dicOther; //OC26042019
+		if((dicOther - icOther) >= 0.5) icOther++;
+		if(icOther < 0) icOther = 0;
+		else if(icOther > nOtherMi1) icOther = nOtherMi1;
+
+		ofst0 = (ieCen << 1) + icOther*(per*nx);
+		argStep = xStep;
+		argStart = xStart;
+		argN = nx;
+		argCen = xc;
+		argR = RobsX;
+	}
+	else
+	{
+		per = (ne << 1)*nx;
+
+		//long nOtherMi1 = nx - 1;
+		long long nOtherMi1 = nx - 1; //OC26042019
+		double dicOther = (xc - xStart)/xStep;
+		//long icOther = (long)dicOther;
+		long long icOther = (long long)dicOther; //OC26042019
+		if((dicOther - icOther) >= 0.5) icOther++;
+		if(icOther < 0) icOther = 0;
+		else if(icOther > nOtherMi1) icOther = nOtherMi1;
+
+		ofst0 = icOther*(ne << 1) + (ieCen << 1);
+		argStep = zStep;
+		argStart = zStart;
+		argN = nz;
+		argCen = zc;
+		argR = RobsZ;
+	}
+	double invArgStep = 1./argStep;
+	double coefPh = halfWaveNum/argR;
+
+	bool fldX_ShouldBeTreated = (fldX_or_Z != 'z') && (fldX_or_Z != 'Z') && (fldX_or_Z != 'y') && (fldX_or_Z != 'Y') && (pBaseRadX != 0);
+	bool fldZ_ShouldBeTreated = (fldX_or_Z != 'x') && (fldX_or_Z != 'X') && (pBaseRadZ != 0);
+
+	float *pFldX = pBaseRadX + ofst0, *pFldZ = pBaseRadZ + ofst0;
+	float *tFldX = pFldX, *tFldZ = pFldZ;
+	double reEx=0, imEx=0, reEz=0, imEz=0;
+	double maxIntX=0., maxIntZ=0.;
+	for(long i=0; i<argN; i++)
+	{
+		if(fldX_ShouldBeTreated)
+		{
+			reEx = *tFldX; imEx = *(tFldX + 1); tFldX += per;
+			double curIntX = reEx*reEx + imEx*imEx;
+			if(maxIntX < curIntX) maxIntX = curIntX;
+		}
+		if(fldZ_ShouldBeTreated)
+		{
+			reEz = *tFldZ; imEz = *(tFldZ + 1); tFldZ += per;
+			double curIntZ = reEz*reEz + imEz*imEz;
+			if(maxIntZ < curIntZ) maxIntZ = curIntZ;
+		}
+	}
+
+	float *tFld = pFldX;
+	double maxInt = maxIntX;
+	if(maxIntZ > maxIntX)
+	{
+		tFld = pFldZ; maxInt = maxIntZ;
+	}
+
+	double threshInt = 0.01*maxInt; //to tune!
+
+	double re=0, im=0;
+	double prevRe=0, prevIm=0;
+	double prevReAfter=0, prevImAfter=0;
+
+	double difArg = argStart - argCen;
+	double phShift = coefPh*difArg*difArg;
+	double cosPh = cos(phShift), sinPh = sin(phShift);
+	prevRe = *tFld; prevIm = *(tFld + 1);
+	prevReAfter = prevRe*cosPh + prevIm*sinPh;
+	prevImAfter = prevIm*cosPh - prevRe*sinPh;
+
+	double reAfter=0, imAfter=0;
+	double derRe=0, derIm=0;
+	double derReAfter=0, derImAfter=0;
+	double prevDerRe=0, prevDerIm=0;
+	double prevDerReAfter=0, prevDerImAfter=0;
+	int numDerReSignChange=0, numDerImSignChange=0;
+	int numDerReSignChangeAfter=0, numDerImSignChangeAfter=0;
+	
+	const double twoPi = 6.2831853;
+	double phShiftPrev;
+
+	for(long i=0; i<argN; i++)
+	{
+		phShift = coefPh*difArg*difArg;
+
+		bool phShiftIsSmall = false;
+		if(i > 0) //OC05012017
+		{
+			if(::fabs(phShift - phShiftPrev) < twoPi) phShiftIsSmall = true;
+		}
+		phShiftPrev = phShift;
+
+		difArg += argStep;
+		cosPh = cos(phShift); sinPh = sin(phShift);
+
+		re = *tFld; im = *(tFld + 1); tFld += per;
+		derRe = (re - prevRe)*invArgStep;
+		derIm = (im - prevIm)*invArgStep;
+
+		reAfter = re*cosPh + im*sinPh;
+		imAfter = im*cosPh - re*sinPh;
+		derReAfter = (reAfter - prevReAfter)*invArgStep;
+		derImAfter = (imAfter - prevImAfter)*invArgStep;
+
+		double curInt = re*re + im*im;
+		//if(curInt > threshInt)
+		if((curInt > threshInt) && phShiftIsSmall) //OC05012017 //take into account only "resolved" oscillations
+		{
+			if(derRe*prevDerRe < 0.) numDerReSignChange++;
+			if(derIm*prevDerIm < 0.) numDerImSignChange++;
+			if(derReAfter*prevDerReAfter < 0.) numDerReSignChangeAfter++;
+			if(derImAfter*prevDerImAfter < 0.) numDerImSignChangeAfter++;
+		}
+		prevDerRe = derRe; prevDerIm = derIm;
+		prevRe = re; prevIm = im;
+		prevDerReAfter = derReAfter; prevDerImAfter = derImAfter;
+		prevReAfter = reAfter; prevImAfter = imAfter;
+	}
+
+	int numDerE_SignChange = numDerReSignChange, numDerE_SignChangeAfter = numDerReSignChangeAfter;
+	if(numDerImSignChange > numDerReSignChange)
+	{
+		numDerE_SignChange = numDerImSignChange;
+		numDerE_SignChangeAfter = numDerImSignChangeAfter;
+	}
+	
+	return (numDerE_SignChangeAfter <= numDerE_SignChange);
+}
+
+//*************************************************************************
+
+void srTSRWRadStructAccessData::GetIntMesh(char dep, SRWLRadMesh& mesh) //OC23082018
+{//This assumes center values for the intensity distribution are defined in mesh.eStart, mesh.xStart, mesh.yStart at input
+	mesh.ne = mesh.nx = mesh.ny = 1;
+	if(dep == 0) 
+	{
+		mesh.ne = ne;
+		mesh.eStart = eStart; 
+		mesh.eFin = eStart + eStep*(ne - 1);
+		//Keep mesh.xStart, mesh.yStart as they define "central" values of the intensity distribution
+	}
+	else if(dep == 1) 
+	{
+		mesh.nx = nx;
+		mesh.xStart = xStart; 
+		mesh.xFin = xStart + xStep*(nx - 1);
+		//Keep mesh.eStart, mesh.yStart as they define "central" values of the intensity distribution
+	}
+	else if(dep == 2) 
+	{
+		mesh.ny = nz;
+		mesh.yStart = zStart; 
+		mesh.yFin = zStart + zStep*(nz - 1);
+		//Keep mesh.eStart, mesh.xStart as they define "central" values of the intensity distribution
+	}
+	else if(dep == 3) 
+	{
+		mesh.nx = nx;
+		mesh.xStart = xStart; 
+		mesh.xFin = xStart + xStep*(nx - 1);
+		mesh.ny = nz;
+		mesh.yStart = zStart; 
+		mesh.yFin = zStart + zStep*(nz - 1);
+		//Keep mesh.eStart as it defines "central" value of the intensity distribution
+	}
+	else if(dep == 4) 
+	{
+		mesh.ne = ne;
+		mesh.eStart = eStart; 
+		mesh.eFin = eStart + eStep*(ne - 1);
+		mesh.nx = nx;
+		mesh.xStart = xStart; 
+		mesh.xFin = xStart + xStep*(nx - 1);
+		//Keep mesh.yStart as it defines "central" value of the intensity distribution
+	}
+	else if(dep == 5) 
+	{
+		mesh.ne = ne;
+		mesh.eStart = eStart; 
+		mesh.eFin = eStart + eStep*(ne - 1);
+		mesh.ny = nz;
+		mesh.yStart = zStart; 
+		mesh.yFin = zStart + zStep*(nz - 1);
+		//Keep mesh.xStart as it defines "central" value of the intensity distribution
+	}
+	else if(dep == 6) 
+	{
+		mesh.ne = ne;
+		mesh.eStart = eStart; 
+		mesh.eFin = eStart + eStep*(ne - 1);
+		mesh.nx = nx;
+		mesh.xStart = xStart; 
+		mesh.xFin = xStart + xStep*(nx - 1);
+		mesh.ny = nz;
+		mesh.yStart = zStart; 
+		mesh.yFin = zStart + zStep*(nz - 1);
+	}
+}
+
+//*************************************************************************
+/**
+void srTSRWRadStructAccessData::EstimWfrRadCen(double& resR, double& resCen, char cutX_or_Z, char fldX_or_Z, double relArgRange, double relArgCenOther)
+{
+	resR = 0; resCen = 0;
+
+	if((pBaseRadX == 0) && (pBaseRadZ == 0)) return;
+	if((relArgRange <= 0.) || (relArgRange > 1.)) return;
+
+	long ieCen = 0;
+	if(ne > 1) ieCen = ne >> 1;
+	double eCen = eStart + eStep*ieCen;
+	double waveNum = (5.06773065E+06)*eCen; //2*Pi/lambda_m
+
+	const long minNp = 5; //to tune
+	long ofst0, per, iStart, iEnd;
+	double argStep, argStart;
+
+	if((cutX_or_Z == 'x') || (cutX_or_Z == 'X'))
+	{
+		per = ne << 1;
+
+		long nOtherMi1 = nz - 1;
+		double dicOther = nOtherMi1*relArgCenOther;
+		long icOther = (long)dicOther;
+		if((dicOther - icOther) >= 0.5) icOther++;
+		if(icOther < 0) icOther = 0;
+		else if(icOther > nOtherMi1) icOther = nOtherMi1;
+
+		double diStart = 0.5*(1. - relArgRange)*(nx - 1);
+		iStart = (long)diStart;
+		if((diStart - iStart) >= 0.5) iStart++;
+		if(iStart < 0) iStart = 0;
+		long actNp = nx - 2*iStart;
+		if(actNp < minNp) iStart = (nx - actNp) >> 1;
+		if(iStart < 0) iStart = 0;
+
+		iEnd = nx - 1 - iStart;
+		ofst0 = (ieCen << 1) + iStart*per + icOther*(per*nx);
+		argStep = xStep;
+		argStart = xStart;
+	}
+	else
+	{
+		per = (ne << 1)*nx;
+
+		long nOtherMi1 = nx - 1;
+		double dicOther = nOtherMi1*relArgCenOther;
+		long icOther = (long)dicOther;
+		if((dicOther - icOther) >= 0.5) icOther++;
+		if(icOther < 0) icOther = 0;
+		else if(icOther > nOtherMi1) icOther = nOtherMi1;
+
+		double diStart = 0.5*(1. - relArgRange)*(nz - 1);
+		iStart = (long)diStart;
+		if((diStart - iStart) >= 0.5) iStart++;
+		if(iStart < 0) iStart = 0;
+		long actNp = nz - 2*iStart;
+		if(actNp < minNp) iStart = (nz - actNp) >> 1;
+		if(iStart < 0) iStart = 0;
+
+		iEnd = nz - 1 - iStart;
+		ofst0 = iStart*per + icOther*(ne << 1) + (ieCen << 1);
+		argStep = zStep;
+		argStart = zStart;
+	}
+
+	float *pFld = 0;
+	if((fldX_or_Z == 'x') || (fldX_or_Z == 'X')) pFld = pBaseRadX;
+	else if((fldX_or_Z == 'z') || (fldX_or_Z == 'Z') || (fldX_or_Z == 'y') || (fldX_or_Z == 'Y')) pFld = pBaseRadZ;
+	else if(fldX_or_Z == 0)
+	{
+		if(pBaseRadX == 0) pFld = pBaseRadZ;
+		else if(pBaseRadZ == 0) pFld = pBaseRadX;
+		else
+		{//Find max. field component
+			double maxIntX = 0, maxIntZ = 0;
+			float *tBaseRadX = pBaseRadX + ofst0, *tBaseRadZ = pBaseRadZ + ofst0;
+			for(long i=iStart; i<=iEnd; i++)
+			{
+				double reEx = *tBaseRadX, imEx = *(tBaseRadX + 1);
+				double curIntX = reEx*reEx + imEx*imEx;
+				if(maxIntX < curIntX) maxIntX = curIntX;
+				tBaseRadX += per;
+
+				double reEz = *tBaseRadZ, imEz = *(tBaseRadZ + 1);
+				double curIntZ = reEz*reEz + imEz*imEz;
+				if(maxIntZ < curIntZ) maxIntZ = curIntZ;
+				tBaseRadZ += per;
+			}
+			if(maxIntX >= maxIntZ) pFld = pBaseRadX;
+			else pFld = pBaseRadZ;
+		}
+	}
+
+	double invArgStep = 1./argStep;
+	double invTwoArgStep = 0.5*invArgStep;
+
+	long np = (iEnd - iStart + 1) << 1;
+	double *arA1 = new double[np];
+	double *arA2 = new double[np];
+	double *arB = new double[np];
+
+	float *tFld = pFld + ofst0;
+	double ReF = *tFld, ImF = *(tFld + 1);
+	double dReFdx = (*(tFld + 2) - ReF)*invArgStep;
+	double dImFdx = (*(tFld + 3) - ImF)*invArgStep;
+	tFld += 2;
+	double arg = argStart + argStep*iStart;
+	double *t_arA1 = arA1, *t_arA2 = arA2, *t_arB = arB;
+
+	double waveNum_ImF = waveNum*ImF, waveNum_ReF = waveNum*ReF;
+	*(t_arA1++) = -waveNum_ImF*arg;
+	*(t_arA1++) = waveNum_ReF*arg;
+	*(t_arA2++) = -waveNum_ImF;
+	*(t_arA2++) = waveNum_ReF;
+	*(t_arB++) = dReFdx;
+	*(t_arB++) = dImFdx;
+	arg += argStep;
+
+	for(long i=(iStart+1); i<iEnd; i++)
+	{
+		ReF = *tFld; ImF = *(tFld + 1);
+		dReFdx = (*(tFld + 2) - *(tFld - 2))*invTwoArgStep;
+		dImFdx = (*(tFld + 3) - *(tFld - 1))*invTwoArgStep;
+		tFld += 2;
+
+		waveNum_ImF = waveNum*ImF; waveNum_ReF = waveNum*ReF;
+		*(t_arA1++) = -waveNum_ImF*arg;
+		*(t_arA1++) = waveNum_ReF*arg;
+		*(t_arA2++) = -waveNum_ImF;
+		*(t_arA2++) = waveNum_ReF;
+		*(t_arB++) = dReFdx;
+		*(t_arB++) = dImFdx;
+		arg += argStep;
+	}
+
+	ReF = *tFld; ImF = *(tFld + 1);
+	dReFdx = (ReF - *(tFld - 2))*invArgStep;
+	dImFdx = (ImF - *(tFld - 1))*invArgStep;
+
+	waveNum_ImF = waveNum*ImF; waveNum_ReF = waveNum*ReF;
+	*(t_arA1++) = -waveNum_ImF*arg;
+	*t_arA1 = waveNum_ReF*arg;
+	*(t_arA2++) = -waveNum_ImF;
+	*t_arA2 = waveNum_ReF;
+	*(t_arB++) = dReFdx;
+	*t_arB = dImFdx;
+
+	//Finding solution (linear fit): (AT*A)^(-1)*AT*B
+	double AtB1=0., AtB2=0., AtA11=0., AtA12=0., AtA22=0.;
+	t_arA1 = arA1; t_arA2 = arA2; t_arB = arB;
+	double a1, a2, b;
+
+	for(long i=0; i<np; i++)
+	{
+		a1 = *(t_arA1++); a2 = *(t_arA2++); b = *(t_arB++);
+		
+		AtB1 += a1*b;
+		AtB2 += a2*b;
+		AtA11 += a1*a1; AtA12 += a1*a2;
+		AtA22 += a2*a2;
+	}
+	double AtA21 = AtA12;
+
+	double detAtA = AtA11*AtA22 - AtA12*AtA22;
+	if(detAtA == 0.) return;
+
+	double invDetAtA = 1./detAtA;
+	double invAtA11 = invDetAtA*AtA22, invAtA12 = -invDetAtA*AtA12;
+	double invAtA21 = -invDetAtA*AtA21, invAtA22 = invDetAtA*AtA11;
+	double u1 = invAtA11*AtB1 + invAtA12*AtB2;
+	double u2 = invAtA21*AtB1 + invAtA22*AtB2;
+
+	resR = 1./u1; 
+	resCen = -u2*resR;
+
+	delete[] arA1;
+	delete[] arA2;
+	delete[] arB;
+}
+**/
 //*************************************************************************

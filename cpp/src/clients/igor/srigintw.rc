@@ -213,8 +213,21 @@ BEGIN
 	"Failed to interpolate electric field.\0", //#178
 
 	"Incorrect or insufficient parameters for magnetic field calculation.\0", //#179
+	"Incorrect input parameters for FFT procedure.\0", //#180
+	"Incorrect input parameters for convolution with Gaussian.\0", //#181
+	"Incorrect input parameters for conversion of tabulated magnetic field to periodic.\0", //#182
+	"Incorrect spherical mirror parameter: radius should not be zero.\0", //#183
+	"Incorrect crystal parameter: use case is not supported.\0", //#184
+	"Incorrect input parameters for search of indexes of undulator gap and phase values requiired for undulator field interpolation based on gap and phase.\0", //#185
+	"Incorrect or insufficient parameters for spherical wave electric field calculation.\0", //#186
+	
+	"Failed to determine array element index for interpolation.\0", //#187
+	"Failed to allocate array in front-end / client environment.\0", //#188
+	"Mutual intensity can not be extracted for these input parameters.\0", //189
+	"Incorrect input parameters for calculation of statistical characteristics of intensity.\0", //190
+	"Incorrect input parameters for processing intensity distributions.\0", //191
 
-	"\0"						// NOTE: NULL required to terminate the resource.
+	0,						// NOTE: 0 required to terminate the resource.
 END
 
 1200 STR# /* SRW Warnings */
@@ -223,16 +236,16 @@ BEGIN
 	"Too large Optical Klystron phase shift parameter. Resulting precision may be low.\0",
 	"Too few periods in the undulator. Resulting precision may be low.\0",
 
-	"\0"
+	0,
 END
 
 1100 XOPI						// XOPI - Describes general XOP properties to IGOR. 
 BEGIN
-	XOP_VERSION,				// Version number of host XOP system.
-	DEV_SYS_CODE,				// Code for development system used to make XOP
-	0,							// True if XOP requires hierarchical menus
-	0,							// True if XOP requires math coprocessor
-	0							// True if XOP requires MMU
+	XOP_VERSION,					// Version number of host XOP system.
+	DEV_SYS_CODE,					// Code for development system used to make XOP.
+	XOP_FEATURE_FLAGS,				// Tells Igor about XOP features
+	XOPI_RESERVED,					// Reserved - must be zero.
+	XOP_TOOLKIT_VERSION				// XOP Toolkit version.
 END
 
 1100 XOPF						// Describes functions that the XOP adds to IGOR.
@@ -634,5 +647,5 @@ BEGIN
 		WAVE_TYPE,
 		0,						// End of parameters.
 
-	"\0"							// NOTE: NULL required to terminate the resource.
+	0,							// NOTE: NULL required to terminate the resource.
 END

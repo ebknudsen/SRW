@@ -86,6 +86,7 @@ srTRadIntPeriodic::srTRadIntPeriodic(srTEbmDat* pElecBeam, srTMagFieldPeriodic* 
         IntPerStoPrec.Kns = pParPrecStokesPer->PrecS;
 		IntPerStoPrec.Knphi = pParPrecStokesPer->PrecPhi;
         IntPerStoPrec.IntensityOrFlux = pParPrecStokesPer->IntOrFlux;
+		IntPerStoPrec.MinPhotEnExtRight = pParPrecStokesPer->MinPhotEnExtRight; //OC170713
 
 		//if(IntPerStoPrec.IntensityOrFlux != 'f') DistrInfoDat.EnsureZeroTransverseRangesForSinglePoints();
 		//this leads to bug
@@ -176,11 +177,15 @@ int srTRadIntPeriodic::ComputeTotalStokesDistr(srTStokesStructAccessData* pStoke
 	char FinalResAreSymOverX = 0, FinalResAreSymOverZ = 0;
 	AnalizeFinalResultsSymmetry(FinalResAreSymOverX, FinalResAreSymOverZ);
 
-	long PerX = DistrInfoDat.nLamb << 2;
-	long PerZ = PerX*DistrInfoDat.nx;
+	//long PerX = DistrInfoDat.nLamb << 2;
+	//long PerZ = PerX*DistrInfoDat.nx;
+	long long PerX = DistrInfoDat.nLamb << 2;
+	long long PerZ = PerX*DistrInfoDat.nx;
 
-	long PerX1 = DistrInfoDat.nLamb;
-	long PerZ1 = PerX1*DistrInfoDat.nx;
+	//long PerX1 = DistrInfoDat.nLamb;
+	//long PerZ1 = PerX1*DistrInfoDat.nx;
+	long long PerX1 = DistrInfoDat.nLamb;
+	long long PerZ1 = PerX1*DistrInfoDat.nx;
 
 	double xAngStart, xAngStep, zAngStart, zAngStep;
 	FindAngularObsGrid(xAngStart, xAngStep, zAngStart, zAngStep);
@@ -188,13 +193,15 @@ int srTRadIntPeriodic::ComputeTotalStokesDistr(srTStokesStructAccessData* pStoke
 	double zTol = zAngStep*0.001; // To steer
 
 	srTCompProgressIndicator CompProgressInd;
-	long TotalAmOfOutCounts = DistrInfoDat.nz*DistrInfoDat.nx*(IntPerStoPrec.FinHarm - IntPerStoPrec.InitHarm + 1);
+	//long TotalAmOfOutCounts = DistrInfoDat.nz*DistrInfoDat.nx*(IntPerStoPrec.FinHarm - IntPerStoPrec.InitHarm + 1);
+	long long TotalAmOfOutCounts = DistrInfoDat.nz*DistrInfoDat.nx*(IntPerStoPrec.FinHarm - IntPerStoPrec.InitHarm + 1);
 	if(FinalResAreSymOverX) TotalAmOfOutCounts >>= 1;
 	if(FinalResAreSymOverZ) TotalAmOfOutCounts >>= 1;
 	char ProgressIndicatorEnabled = (TotalAmOfOutCounts >= 5); // To steer
 	double UpdateTimeInt_s = 0.5; // To steer
 	if(ProgressIndicatorEnabled) if(result = CompProgressInd.InitializeIndicator(TotalAmOfOutCounts, UpdateTimeInt_s)) return result;
-	long ProgressCount = 0;
+	//long ProgressCount = 0;
+	long long ProgressCount = 0;
 
 	for(int n=IntPerStoPrec.InitHarm; n<=IntPerStoPrec.FinHarm; n++)
 	{
@@ -204,6 +211,7 @@ int srTRadIntPeriodic::ComputeTotalStokesDistr(srTStokesStructAccessData* pStoke
 
 		double eStart = DistrInfoDat.LambStart, eFin = DistrInfoDat.LambEnd;
 		long Ne = DistrInfoDat.nLamb;
+		//long long Ne = DistrInfoDat.nLamb; //OC26042019
 		srTEnergyAzimuthGrid EnAzGrid; // Keep it as local
 		if(result = DeduceGridOverPhotonEnergyAndAzimuth(n, eStart, eFin, Ne, EnAzGrid)) return result;
 		if(result = EnAzGrid.SetUpCosAndSinLookUpArrays()) return result;
@@ -235,7 +243,8 @@ int srTRadIntPeriodic::ComputeTotalStokesDistr(srTStokesStructAccessData* pStoke
 				SetUpAvgEnergy(n); // Since it depends on EXZ.x, EXZ.z
 
 				//if(result = ComputeHarmContribToSpecAtDir(n, EnAzGrid, LongIntArrays, LongIntArrInfo, pStartEnSlice)) return result;
-				long ofstSt = iz*PerZ1 + ix*PerX1; //OC020112
+				//long ofstSt = iz*PerZ1 + ix*PerX1; //OC020112
+				long long ofstSt = iz*PerZ1 + ix*PerX1; //OC020112
 				if(result = ComputeHarmContribToSpecAtDir(n, EnAzGrid, LongIntArrays, LongIntArrInfo, pStartEnSlice, pStokesSRWL, ofstSt)) return result;
 
 				if(result = srYield.Check()) return result;
@@ -258,7 +267,8 @@ int srTRadIntPeriodic::ComputeTotalStokesDistr(srTStokesStructAccessData* pStoke
 //*************************************************************************
 
 //int srTRadIntPeriodic::ComputeHarmContribToSpecAtDir(int n, srTEnergyAzimuthGrid& EnAzGrid, float** LongIntArrays, int** LongIntArrInfo, float* pOutEnSlice)
-int srTRadIntPeriodic::ComputeHarmContribToSpecAtDir(int n, srTEnergyAzimuthGrid& EnAzGrid, double** LongIntArrays, int** LongIntArrInfo, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long ofstSt)
+//int srTRadIntPeriodic::ComputeHarmContribToSpecAtDir(int n, srTEnergyAzimuthGrid& EnAzGrid, double** LongIntArrays, int** LongIntArrInfo, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long ofstSt)
+int srTRadIntPeriodic::ComputeHarmContribToSpecAtDir(int n, srTEnergyAzimuthGrid& EnAzGrid, double** LongIntArrays, int** LongIntArrInfo, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long long ofstSt)
 {
 	int result;
 
@@ -425,7 +435,8 @@ void srTRadIntPeriodic::FillInSymPartsOfResults(char FinalResAreSymOverX, char F
 {
 	//long PerX = DistrInfoDat.nLamb << 2; //This is for IGOR version data alignment
 	//long PerZ = PerX*DistrInfoDat.nx;
-	long PerX=0;
+	//long PerX=0;
+	long long PerX=0; //OC26042019
 	if(pStokesAccessData != 0)
 	{//This is for IGOR version data alignment
 		PerX = DistrInfoDat.nLamb << 2; 
@@ -434,7 +445,8 @@ void srTRadIntPeriodic::FillInSymPartsOfResults(char FinalResAreSymOverX, char F
 	{//This is for SRWLib version data alignment
 		PerX = DistrInfoDat.nLamb; //This is for IGOR version data alignment
 	}
-	long PerZ = PerX*DistrInfoDat.nx;
+	//long PerZ = PerX*DistrInfoDat.nx;
+	long long PerZ = PerX*DistrInfoDat.nx; //OC26042019
 
 	char SymWithRespectToXax, SymWithRespectToZax;
 	int HalfNz = DistrInfoDat.nz >> 1, Nz_mi_1 = DistrInfoDat.nz - 1;
@@ -453,14 +465,16 @@ void srTRadIntPeriodic::FillInSymPartsOfResults(char FinalResAreSymOverX, char F
 			SymWithRespectToXax = 0; SymWithRespectToZax = 1;
 			for(iz=0; iz<HalfNz; iz++)
 			{
-				long izPerZ = iz*PerZ;
+				long long izPerZ = iz*PerZ;
 				for(ix=0; ix<HalfNx; ix++)
 				{
 					//float* pOrigData = StokesAccessData.pBaseSto + izPerZ + ix*PerX;
 					//float* pSymData = StokesAccessData.pBaseSto + izPerZ + (Nx_mi_1 - ix)*PerX;
 					//CopySymEnergySlice(pOrigData, pSymData, SymWithRespectToXax, SymWithRespectToZax);
-					long ofstOrigData = izPerZ + ix*PerX;
-					long ofstSymData = izPerZ + (Nx_mi_1 - ix)*PerX;
+					//long ofstOrigData = izPerZ + ix*PerX;
+					//long ofstSymData = izPerZ + (Nx_mi_1 - ix)*PerX;
+					long long ofstOrigData = izPerZ + ix*PerX; //OC28042019
+					long long ofstSymData = izPerZ + (Nx_mi_1 - ix)*PerX;
 					if(pStokesAccessData != 0) //OC080812
 					{
 						float* pOrigData = pStokesAccessData->pBaseSto + ofstOrigData;
@@ -477,15 +491,19 @@ void srTRadIntPeriodic::FillInSymPartsOfResults(char FinalResAreSymOverX, char F
 		SymWithRespectToXax = 1; SymWithRespectToZax = 0;
 		for(iz=0; iz<HalfNz; iz++)
 		{
-			long izPerZ = iz*PerZ, BufZ = (Nz_mi_1 - iz)*PerZ;
+			//long izPerZ = iz*PerZ, BufZ = (Nz_mi_1 - iz)*PerZ;
+			long long izPerZ = iz*PerZ, BufZ = (Nz_mi_1 - iz)*PerZ; //OC28042019
 			for(ix=0; ix<DistrInfoDat.nx; ix++)
 			{
-				long ixPerX = ix*PerX;
+				//long ixPerX = ix*PerX;
+				long long ixPerX = ix*PerX; //OC28042019
 				//float* pOrigData = StokesAccessData.pBaseSto + izPerZ + ixPerX;
 				//float* pSymData = StokesAccessData.pBaseSto + BufZ + ixPerX;
 				//CopySymEnergySlice(pOrigData, pSymData, SymWithRespectToXax, SymWithRespectToZax);
-				long ofstOrigData = izPerZ + ixPerX;
-				long ofstSymData = BufZ + ixPerX;
+				//long ofstOrigData = izPerZ + ixPerX;
+				//long ofstSymData = BufZ + ixPerX;
+				long long ofstOrigData = izPerZ + ixPerX; //OC28042019
+				long long ofstSymData = BufZ + ixPerX;
 				if(pStokesAccessData != 0) //OC080812
 				{
 					float* pOrigData = pStokesAccessData->pBaseSto + ofstOrigData;
@@ -504,14 +522,17 @@ void srTRadIntPeriodic::FillInSymPartsOfResults(char FinalResAreSymOverX, char F
 		SymWithRespectToXax = 0; SymWithRespectToZax = 1;
 		for(iz=0; iz<DistrInfoDat.nz; iz++)
 		{
-			long izPerZ = iz*PerZ;
+			//long izPerZ = iz*PerZ;
+			long long izPerZ = iz*PerZ; //OC28042019
 			for(ix=0; ix<HalfNx; ix++)
 			{
 				//float* pOrigData = StokesAccessData.pBaseSto + izPerZ + ix*PerX;
 				//float* pSymData = StokesAccessData.pBaseSto + izPerZ + (Nx_mi_1 - ix)*PerX;
 				//CopySymEnergySlice(pOrigData, pSymData, SymWithRespectToXax, SymWithRespectToZax);
-				long ofstOrigData = izPerZ + ix*PerX;
-				long ofstSymData = izPerZ + (Nx_mi_1 - ix)*PerX;
+				//long ofstOrigData = izPerZ + ix*PerX;
+				//long ofstSymData = izPerZ + (Nx_mi_1 - ix)*PerX;
+				long long ofstOrigData = izPerZ + ix*PerX; //OC28042019
+				long long ofstSymData = izPerZ + (Nx_mi_1 - ix)*PerX;
 				if(pStokesAccessData != 0) //OC080812
 				{
 					float* pOrigData = pStokesAccessData->pBaseSto + ofstOrigData;
@@ -949,12 +970,14 @@ void srTRadIntPeriodic::FindIntegralOfInfNperData(int n, srTEnergyAzimuthGrid& E
 //*************************************************************************
 
 //int srTRadIntPeriodic::FilamentTreatEnergySpreadAndFiniteNumberOfPeriods(int n, srTEnergyAzimuthGrid& EnAzGrid, float* InfNperHarmData, float* pOutEnSlice)
-int srTRadIntPeriodic::FilamentTreatEnergySpreadAndFiniteNumberOfPeriods(int n, srTEnergyAzimuthGrid& EnAzGrid, float* InfNperHarmData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long ofstSt) //OC020112
+//int srTRadIntPeriodic::FilamentTreatEnergySpreadAndFiniteNumberOfPeriods(int n, srTEnergyAzimuthGrid& EnAzGrid, float* InfNperHarmData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long ofstSt) //OC020112
+int srTRadIntPeriodic::FilamentTreatEnergySpreadAndFiniteNumberOfPeriods(int n, srTEnergyAzimuthGrid& EnAzGrid, float* InfNperHarmData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long long ofstSt) //OC020112
 {
 	int result;
 
 	double eStart = DistrInfoDat.LambStart, eFin = DistrInfoDat.LambEnd;
 	long Ne = DistrInfoDat.nLamb;
+	//long long Ne = DistrInfoDat.nLamb; //OC26042019
 	srTEnergyAzimuthGrid EnAzGridLoc; // Keep it as local
 	EnAzGridLoc.EnsureEnResolvingObsPixels = 0;
 	if(result = DeduceGridOverPhotonEnergyAndAzimuth(n, eStart, eFin, Ne, EnAzGridLoc)) return result;
@@ -970,7 +993,8 @@ int srTRadIntPeriodic::FilamentTreatEnergySpreadAndFiniteNumberOfPeriods(int n, 
 //*************************************************************************
 
 //int srTRadIntPeriodic::TreatEnergySpreadAndFiniteNumberOfPeriods(int n, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* pOutEnSlice)
-int srTRadIntPeriodic::TreatEnergySpreadAndFiniteNumberOfPeriods(int n, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long ofstSt) //OC020112
+//int srTRadIntPeriodic::TreatEnergySpreadAndFiniteNumberOfPeriods(int n, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long ofstSt) //OC020112
+int srTRadIntPeriodic::TreatEnergySpreadAndFiniteNumberOfPeriods(int n, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long long ofstSt) //OC020112
 {
 	if(FilamentTreatmentIsPossible(EnAzGrid)) return FilamentTreatEnergySpreadAndFiniteNumberOfPeriods(n, EnAzGrid, FinNperHarmData, pOutEnSlice, pStokesSRWL, ofstSt);
 
@@ -1033,7 +1057,8 @@ int srTRadIntPeriodic::TreatEnergySpreadAndFiniteNumberOfPeriods(int n, srTEnerg
 //*************************************************************************
 
 //int srTRadIntPeriodic::ConvStokesCompon(int StokesNo, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* ConvFactorData, float* pOutEnSlice)
-int srTRadIntPeriodic::ConvStokesCompon(int StokesNo, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* ConvFactorData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long ofstSt) //OC020112
+//int srTRadIntPeriodic::ConvStokesCompon(int StokesNo, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* ConvFactorData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long ofstSt) //OC020112
+int srTRadIntPeriodic::ConvStokesCompon(int StokesNo, srTEnergyAzimuthGrid& EnAzGrid, float* FinNperHarmData, float* ConvFactorData, float* pOutEnSlice, SRWLStructStokes* pStokesSRWL, long long ofstSt) //OC020112
 {
 	int result;
 
@@ -1072,6 +1097,7 @@ int srTRadIntPeriodic::ConvStokesCompon(int StokesNo, srTEnergyAzimuthGrid& EnAz
 		for(i=0; i<EnAzGrid.Ne; i++) { *t = *tIn; t += 2; tIn += 4;}
 
 		if(result = FFT1D.Make1DFFT(FFT1DInfo)) return result;
+
 		if(AuxDataForSharpEdgeCorrGen.WasSetUp) FFT1D.MakeSharpEdgeCorr(FFT1DInfo, AuxDataForSharpEdgeCorrGen);
 	}
 	else
@@ -1098,7 +1124,9 @@ int srTRadIntPeriodic::ConvStokesCompon(int StokesNo, srTEnergyAzimuthGrid& EnAz
 
 		float ReRes = ReGen*Re - ImGen*Im;
 		float ImRes = ImGen*Re + ReGen*Im;
+
 		ReGen = ReRes; ImGen = ImRes;
+
 		tGen += 2; tCon += 2;
 	}
 
@@ -1242,6 +1270,8 @@ void srTRadIntPeriodic::CorrectGridToAllowRangeResizeOnTheOtherSide(srTEnergyAzi
 	double eStepOld = (EnAzGrid.eFin - EnAzGrid.eStart)/(EnAzGrid.Ne - 1);
 	long Ne = EnAzGrid.NeExtraLeft + EnAzGrid.Ne + EnAzGrid.NeExtraRight;
 	long HalfNe = Ne >> 1;
+	//long long Ne = EnAzGrid.NeExtraLeft + EnAzGrid.Ne + EnAzGrid.NeExtraRight; //OC26042019
+	//long long HalfNe = Ne >> 1;
 	//double emOld = eStepOld*HalfNe;
 
 	long AmOfStepsLeftFromCritEn = long((EnAzGrid.eCritForHarm - EnAzGrid.eStart)/eStepOld + 1.E-06);
@@ -1251,6 +1281,7 @@ void srTRadIntPeriodic::CorrectGridToAllowRangeResizeOnTheOtherSide(srTEnergyAzi
 	double StepRatOld_mi_1;
 	double eStepNew, StepRatNew;
 	long Nq;
+	//long long Nq; //OC26042019
 	int &Multip = EnAzGrid.EnergyAdjustFinGridPar.Multip;
 	if(::fabs(StepRatOld - 1.) < RelTol)
 	{
@@ -1619,9 +1650,16 @@ double srTRadIntPeriodic::EstimateTaperResCurveWidth(int n)
 //*************************************************************************
 
 int srTRadIntPeriodic::DeduceGridOverPhotonEnergyAndAzimuth(int n, double& eStart, double& eFin, long& ne, srTEnergyAzimuthGrid& EnAzGrid)
+//int srTRadIntPeriodic::DeduceGridOverPhotonEnergyAndAzimuth(int n, double& eStart, double& eFin, long long& ne, srTEnergyAzimuthGrid& EnAzGrid) //OC26042019
 {
 	double eMinEff, eMaxEff, PhiMinEff, PhiMaxEff;
 	EstimateEnergyAndPhiObsLimits(n, eMinEff, eMaxEff, PhiMinEff, PhiMaxEff);
+
+	//OCTEST 150713
+	//double eStartTot = eStart, eFinTot = eFin;
+	//if(eMinEff > eStartTot) eMinEff = eStartTot; //??
+	//END OCTEST
+
 	EnAzGrid.eMinEff = eMinEff;
 	EnAzGrid.eMaxEff = eMaxEff;
 	EnAzGrid.PhiMin = PhiMinEff;
@@ -1630,6 +1668,7 @@ int srTRadIntPeriodic::DeduceGridOverPhotonEnergyAndAzimuth(int n, double& eStar
 	const double c0 = 1.239854E-09;
 	double Buf0 = c0/(MagPer.PerLength*EbmDat.GammaEm2*(1. + MagPer.HalfKxE2pKzE2));
 	double CritEnergyForHarm = (n << 1)*Buf0;
+	double FundE = CritEnergyForHarm/double(n); //OC170713
 	EnAzGrid.eCritForHarm = CritEnergyForHarm;
 
 	double &PhiLenToResolve = EnAzGrid.PhiLenToResolve, &eStepToResolve = EnAzGrid.eStepToResolve;
@@ -1675,7 +1714,7 @@ int srTRadIntPeriodic::DeduceGridOverPhotonEnergyAndAzimuth(int n, double& eStar
 	{
 		FiniteNperContr = EstimateTaperResCurveWidth(n);
 
-		double FundE = CritEnergyForHarm/double(n);
+		//double FundE = CritEnergyForHarm/double(n); //OC170713
 		if(FiniteNperContr > 0.7*FundE) // To steer
 		{
 			VeryLargeEnergySpreadAndFinNperContr = 1;
@@ -1705,6 +1744,8 @@ int srTRadIntPeriodic::DeduceGridOverPhotonEnergyAndAzimuth(int n, double& eStar
 	else EnergySpreadAndFinNperContr = FiniteNperContr;
 
 	int AmOfExtraResWidths = 4; // To steer !
+	//int AmOfExtraResWidths = 6; //OCTEST To steer !
+
 	int MinAmOfPoints = 20; // To steer !
 
 	if(VeryLargeEnergySpreadAndFinNperContr)
@@ -1719,7 +1760,7 @@ int srTRadIntPeriodic::DeduceGridOverPhotonEnergyAndAzimuth(int n, double& eStar
 	{
 		ActuallyOnlyOnePointIsNeeded = 1;
 
-		MinAmOfPoints = 20; // To steer !
+		//MinAmOfPoints = 20; // To steer !
 		const int PointsPerFringe = 4; // To steer !
 		ne = (AmOfExtraResWidths*PointsPerFringe) << 1;
 		if(ne < MinAmOfPoints) ne = MinAmOfPoints;
@@ -1861,6 +1902,7 @@ int srTRadIntPeriodic::DeduceGridOverPhotonEnergyAndAzimuth(int n, double& eStar
 
 	double eExtraLocNewLeft = (PrevHarmPeak < eStart)? (eStart - PrevHarmPeak) : 0;
 	//if(eExtraLocNewLeft < eExtraLocNew) eExtraLocNewLeft = eExtraLocNew;
+
 	double eExtraLocNewRight = (eFin < NextHarmPeak)? (NextHarmPeak - eFin) : 0;
 	if(eExtraLocNewRight < eExtraLocNew) eExtraLocNewRight = eExtraLocNew;
 
@@ -1897,16 +1939,34 @@ int srTRadIntPeriodic::DeduceGridOverPhotonEnergyAndAzimuth(int n, double& eStar
 	//		if(neExtraRight < BufExtraRight) neExtraRight = BufExtraRight;
 	//	}
 	//}
-	if((eFin*1.00001 - EnAzGrid.eCritForHarm)*4. < (EnAzGrid.eCritForHarm - eStart)) //To steer
-	{// To make the sharp edge approximately in the middle
-		double AuxEmax = (2.*EnAzGrid.eCritForHarm - (eStart + neExtraLeft*eStep));
-		if(AuxEmax > eFin)
-		{
-			double AuxRat = (AuxEmax - eFin)/(eFin - eStart);
-			long BufExtraRight = long(AuxRat*EnAzGrid.Ne);
-			if(neExtraRight < BufExtraRight) neExtraRight = BufExtraRight;
-		}
+
+	//OCTEST 150713 (commented-out the section below)
+	//if((eFin*1.00001 - EnAzGrid.eCritForHarm)*4. < (EnAzGrid.eCritForHarm - eStart)) //To steer
+	//{// To make the sharp edge approximately in the middle
+	//	double AuxEmax = (2.*EnAzGrid.eCritForHarm - (eStart + neExtraLeft*eStep));
+	//	if(AuxEmax > eFin)
+	//	{
+	//		double AuxRat = (AuxEmax - eFin)/(eFin - eStart);
+	//		long BufExtraRight = long(AuxRat*EnAzGrid.Ne);
+	//		if(neExtraRight < BufExtraRight) neExtraRight = BufExtraRight;
+	//	}
+	//}
+
+	//OC170713
+	//Attempt to move artificial discontuinities (because of convolution of harmonics 
+	//for taking into account finite und. length and Nper) to higher photon energies
+	double eMaxExtentRight = CritEnergyForHarm + FundE*IntPerStoPrec.MinPhotEnExtRight;
+	if(EnAzGrid.eFin + neExtraRight*eStep < eMaxExtentRight)
+	{
+		neExtraRight = long((eMaxExtentRight - EnAzGrid.eFin)/eStep);
 	}
+
+	//OCTEST 150713
+	//if(EnAzGrid.eFin + neExtraRight*eStep < 3*eFinTot)
+	//{//To make sure that "sharp edge" (harmonic calculation cut-off) never happens
+	//	neExtraRight = long((3*eFinTot - EnAzGrid.eFin)/eStep);
+	//}
+	//END OCTEST
 
 	EnAzGrid.NeExtraRight = neExtraRight;
 
@@ -2253,6 +2313,7 @@ void srTRadIntPeriodic::FindPhiIntervalForVectors(TVector2d* Vectors, int LenVec
 //*************************************************************************
 
 void srTRadIntPeriodic::CorrectGridForPassingThroughCritEnergy(int n, double& eStart, double& eStep, long& ne)
+//void srTRadIntPeriodic::CorrectGridForPassingThroughCritEnergy(int n, double& eStart, double& eStep, long long& ne) //OC26042019
 {
 	if(ne < 20) return; // Steer this to avoid fluctuations
 

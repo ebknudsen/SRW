@@ -629,7 +629,8 @@ int srTSASE::Alloc_tslipcom(int nWfr, int nSlip)
 	//if((tslipcom_.crtime = new f2c_doublecomplex[n1]) == NULL) return MEMORY_ALLOCATION_FAILURE_SASE; ZeroArr(tslipcom_.crtime, n1);
 	
 	//long totSize = nWfr*nWfr*(nSlip + 3);
-	long totSize = nWfr*nWfr*(nSlip + 3)*NHMAX;
+	//long totSize = nWfr*nWfr*(nSlip + 3)*NHMAX;
+	long long totSize = ((long long)nWfr)*((long long)nWfr)*(nSlip + 3)*NHMAX;
 	if((tslipcom_.crtime = new f2c_doublecomplex[totSize]) == NULL) return MEMORY_ALLOCATION_FAILURE_SASE; 
 	ZeroArr(tslipcom_.crtime, totSize);
 	return 0;
@@ -984,7 +985,8 @@ int srTSASE::ConvertInputDataToGenesisFormat(int numHarm) //OC191108
 			//test !!!
 			//PrecDat.ncar = 151;
 			//end test
-	inputcom_1.ncar = PrecDat.ncar; //"NCAR"
+	//inputcom_1.ncar = PrecDat.ncar; //"NCAR"
+	inputcom_1.ncar = (long)PrecDat.ncar; //"NCAR" //OC26042019
 	inputcom_1.nsec = WigCom.simcom_nsec; //"NSEC"
 	inputcom_1.iorb = PrecDat.iorb; // "IORB" - flag for orbit correction
 	inputcom_1.delz = PrecDat.delz; // "DELZ"
@@ -1026,7 +1028,7 @@ int srTSASE::ConvertInputDataToGenesisFormat(int numHarm) //OC191108
 	inputcom_1.emitx = EbmDat.NormalizedEmittanceX(); // "EMITX" check this function !!!
 	inputcom_1.emity = EbmDat.NormalizedEmittanceZ(); // "EMITY" check this function !!!
 	inputcom_1.npart = PrecDat.npart; // "NPART"
-	inputcom_1.ntail = PrecDat.ntail; // "NTAIL" - (-253 – integer – unitless) Position of the first simulated slice in measures of ZSEP*XLAMDS. GENESIS 1.3 starts with the tail side of the time window, progressing towards the head. Thus a negative or positive value shifts the slices towards the tail or head region of the beam, respectively. For a constant profile (CURLEN < 0) NTAIL has no impact.
+	inputcom_1.ntail = PrecDat.ntail; // "NTAIL" - (-253 integer unitless) Position of the first simulated slice in measures of ZSEP*XLAMDS. GENESIS 1.3 starts with the tail side of the time window, progressing towards the head. Thus a negative or positive value shifts the slices towards the tail or head region of the beam, respectively. For a constant profile (CURLEN < 0) NTAIL has no impact.
 
 	inputcom_1.gamma0 = EbmDat.Gamma; // "GAMMA0"
 	//double W0 = InRad.WaistDiam; // or 0.5* ?
@@ -1034,7 +1036,7 @@ int srTSASE::ConvertInputDataToGenesisFormat(int numHarm) //OC191108
 
 	inputcom_1.zstop = PrecDat.zstop; // "ZSTOP"
 	inputcom_1.fbess0 = WigCom.fbess0; // "FBESS0"
-	inputcom_1.shotnoise = EbmDat.ShotNoiseFactor; // "SHOTNOISE" (1.0 – float – unitless) GENESIS 1.3 applies a random o_set to each macro particle phase to generate the correct statistic for the bunching factor. Each o_set is scaled prior by SHOTNOISE, thus SHOTNOISE can be set to zero to disable shot noise.
+	inputcom_1.shotnoise = EbmDat.ShotNoiseFactor; // "SHOTNOISE" (1.0 float unitless) GENESIS 1.3 applies a random o_set to each macro particle phase to generate the correct statistic for the bunching factor. Each o_set is scaled prior by SHOTNOISE, thus SHOTNOISE can be set to zero to disable shot noise.
 	inputcom_1.dl = PrecDat.delz*RoundDoubleToInt(WigCom.dl/PrecDat.delz); // "DL" re-calc to integer of step size
 	inputcom_1.fl = PrecDat.delz*RoundDoubleToInt(WigCom.fl/PrecDat.delz); // "FL"
 	inputcom_1.delgam = EbmDat.SigmaRelE*EbmDat.Gamma; // "DELGAM"
@@ -1103,7 +1105,7 @@ int srTSASE::ConvertInputDataToGenesisFormat(int numHarm) //OC191108
 	inputcom_1.offsetradf = PrecDat.offsetradf; 	
 
 	inputcom_1.cuttail = -1; // "CUTTAIL" - Cut in the transverse phase space in measures of the rms size to collimate transverse beam tails/halos. The cut is applied after the loading and beam current is set accordingly to the reduced number of macro particles. It is disabled if the value is negative or the electron beam is imported from an external file.
-	inputcom_1.conditx = 0; // "CONDITX" - [1/m] correlation strength between the amplitude of the eletron’s betatron oscillation and its energy. If the condition is applied correctly any emittance e_ects are removed from the FEL amplification and the focal strength can be increased. However it requires a conditioning beamline prior to the FEL to apply the correlation. Refer to the paper of Sessler (A.N. Sessler, et al., Phys. Rev. Lett 68 (1992) 309) for more information.
+	inputcom_1.conditx = 0; // "CONDITX" - [1/m] correlation strength between the amplitude of the eletron betatron oscillation and its energy. If the condition is applied correctly any emittance e_ects are removed from the FEL amplification and the focal strength can be increased. However it requires a conditioning beamline prior to the FEL to apply the correlation. Refer to the paper of Sessler (A.N. Sessler, et al., Phys. Rev. Lett 68 (1992) 309) for more information.
 	inputcom_1.condity = 0; // "CONDITY" - [1/m] same as CONDITX but for the correlation in the y-plane
 	inputcom_1.eloss = 0; // "ELOSS" - energy loss per meter - Externally applied energy loss of the electron beam.
 	inputcom_1.ndcut = -1; // "NDCUT" =<0 self optimized binning of ext. dist.
@@ -1119,7 +1121,7 @@ int srTSASE::ConvertInputDataToGenesisFormat(int numHarm) //OC191108
 	inputcom_1.ildpsi = 7; // "ILDPSI" - index of the Hammersley sequence bases for loading the particle phase
 	inputcom_1.iotail = 1; //0; // "IOTAIL" - If set to a non-zero value the output time window is the same as the simulated time window. Otherwise the output for the first slices covered by the slippage length is suppressed. Needed for bunches which are completely covered by the time-window
 	inputcom_1.iscan = 0; // "ISCAN" >0 -> iscanth parameter selected
-	//(0 – integer – unitless) Selects the parameter for a scan over a certain range of its value:
+	//(0 integer unitless) Selects the parameter for a scan over a certain range of its value:
 		//1. GAMMA0
 		//2. DELGAM
 		//3. CURPEAK
@@ -1149,7 +1151,7 @@ int srTSASE::ConvertInputDataToGenesisFormat(int numHarm) //OC191108
 	//adjust XLAMDS according to the resonance condition and the beam energy, defined in the BEAMFILE. The BEAMGAM option is similar to BEAMFILE, but overwrites the value of energy with GAMMA0 from the main input file.
 	inputcom_1.scan[0] = '\0'; //"SCAN" - By supplying the parameter name to scan over it overrules the setting of ISCAN.
 	inputcom_1.nscan = 3; // "NSCAN" number of steps per scan (is taken into account only if ISCAN > 0)
-	inputcom_1.svar = 0.01; // "SVAR" (0.01 – float – unitless) - Defines the scan range of the selected scan parameter. The parameter is varied between (1-SVAR) and (1+SVAR) of its initial value. One exception is the scan over ISEED where the random number generator is not reinitialized.
+	inputcom_1.svar = 0.01; // "SVAR" (0.01 float unitless) - Defines the scan range of the selected scan parameter. The parameter is varied between (1-SVAR) and (1+SVAR) of its initial value. One exception is the scan over ISEED where the random number generator is not reinitialized.
 	inputcom_1.version = 0.1; // "VERSION" - Used for backward compatibility of the input decks. Some parameters might change their behavior for older versions of GENESIS 1.3. The current version is 1.0.
 
 	inputcom_1.fieldfile[0] = '\0'; // "FIELDFILE"
@@ -1163,13 +1165,13 @@ int srTSASE::ConvertInputDataToGenesisFormat(int numHarm) //OC191108
 	inputcom_1.distfile[0] = '\0'; // "DISTFILE"
 
 	inputcom_1.ispart = 0; // "ISPART" - write the particle distribution to file for every ISPART slice.
-	inputcom_1.ippart = 0; // "IPPART" - write the particle distribution to file at each IPPARTth integration step. To disable output, set IPPART to zero. The filename is the same of the main outputfile + the extension ’.par’.
+	inputcom_1.ippart = 0; // "IPPART" - write the particle distribution to file at each IPPARTth integration step. To disable output, set IPPART to zero. The filename is the same of the main outputfile + the extension ".par".
 	inputcom_1.ipradi = 0; // "IPRADI" - write the radiation field into file at each step
 	inputcom_1.iphsty = 1; // "IPHSTY" - Generate output in the main output file at each IPHSTYth integration step. To disable output set IPHSTY to zero.
 	inputcom_1.ishsty = 1; // "ISHSTY" - Generate output in the main output file for each ISHSTYth slice.
-    inputcom_1.magin = 0; // "MAGIN" - (0 – integer – unitless) - If set to a non-zero value the user is prompted to type in the file name containing a explicit description of the magnetic field.
+    inputcom_1.magin = 0; // "MAGIN" - (0 integer unitless) - If set to a non-zero value the user is prompted to type in the file name containing a explicit description of the magnetic field.
 	inputcom_1.magout = 0; // "MAGOUT" - Similar to MAGIN to write out the magnetic field lattice used for the simulation.
-	inputcom_1.idump = 0; // "IDUMP" - If set to a non-zero value the complete particle and field distribution is dumped at the undulator exit into two outputfiles. The filenames are the filename of the main output file plus the extension ’.dpa’ and ’.dfl’, respectively.
+	inputcom_1.idump = 0; // "IDUMP" - If set to a non-zero value the complete particle and field distribution is dumped at the undulator exit into two outputfiles. The filenames are the filename of the main output file plus the extension ".dpa" and ".dfl", respectively.
 	inputcom_1.idmpfld = 0; // "IDMPFLD" - similar to IDUMP but only for the field distribution
 	inputcom_1.idmppar = 0; // "IDMPPAR" - similar to IDUMP but only for the particle distribution
 	inputcom_1.isradi = 0; // "ISRADI" - write the field distribution to file for every ISRADI slice, if !=0
@@ -2387,7 +2389,8 @@ int srTSASE::initrun_srw()
 	int result = 0;
 	if(inputcom_1.itdp != 0) //OC191108
 	{//to check!
-		if(result = Alloc_tslipcom(PrecDat.ncar, tbunchcom_1.nslp)) return result; //OC port: separate allocation of GENESIS crtime buffer
+		//if(result = Alloc_tslipcom(PrecDat.ncar, tbunchcom_1.nslp)) return result; //OC port: separate allocation of GENESIS crtime buffer
+		if(result = Alloc_tslipcom((int)(PrecDat.ncar), tbunchcom_1.nslp)) return result; //OC26042019
 	}
 
 /*     time dependencies */
@@ -3135,7 +3138,8 @@ int srTSASE::readfield_srw(f2c_doublecomplex* cin, f2c_integer* irec)
 
 	double tMoment = tStart + (*irec - 1)*tStep;
 	int it0_srw = (int)((tMoment - SeedRad.eStart)/SeedRad.eStep + 0.000001);
-	int nt_srw_mi_1 = SeedRad.ne - 1;
+	//int nt_srw_mi_1 = SeedRad.ne - 1;
+	long long nt_srw_mi_1 = SeedRad.ne - 1; //OC26042019
 	//if((it0_srw < 0) || (it0_srw >= nt_srw_mi_1)) return 0; //don't fill-in anything if out of range (- to check if it's OK)
 	if((it0_srw < 0) || (it0_srw >= nt_srw_mi_1)) OutOfRangeT = true; //don't fill-in anything if out of range (- to check if it's OK)
 	double rt = (tMoment - (SeedRad.eStart + it0_srw*SeedRad.eStep))/SeedRad.eStep; //0 <= rt <= 1
@@ -3159,17 +3163,23 @@ int srTSASE::readfield_srw(f2c_doublecomplex* cin, f2c_integer* irec)
 	double Dmax = RadMeshRange();
 	double xzStep = Dmax/double(Ncar - 1);
 	double xzStart = -0.5*Dmax;
-	int nz_srw_mi_1 = SeedRad.nz - 1, nx_srw_mi_1 = SeedRad.nx - 1;
+	//int nz_srw_mi_1 = SeedRad.nz - 1, nx_srw_mi_1 = SeedRad.nx - 1;
+	long long nz_srw_mi_1 = SeedRad.nz - 1, nx_srw_mi_1 = SeedRad.nx - 1; //OC26042019
 
-	long perT = 2;
-	long perX = perT*SeedRad.ne;
-	long perZ = perX*SeedRad.nx;
+	//long perT = 2;
+	//long perX = perT*SeedRad.ne;
+	//long perZ = perX*SeedRad.nx;
+	long long perT = 2;
+	long long perX = perT*SeedRad.ne;
+	long long perZ = perX*SeedRad.nx;
 	float *pEX0 = SeedRad.pBaseRadX;
 	float *pEZ0 = SeedRad.pBaseRadZ;
 	double ReEX_srw_interp = 0, ImEX_srw_interp = 0, ReEZ_srw_interp = 0, ImEZ_srw_interp = 0;
 
-	long perT_it0_srw = perT*it0_srw;
-	long perT_it1_srw = perT*it1_srw;
+	//long perT_it0_srw = perT*it0_srw;
+	//long perT_it1_srw = perT*it1_srw;
+	long long perT_it0_srw = perT*it0_srw;
+	long long perT_it1_srw = perT*it1_srw;
 
 	double z_genesis = xzStart - xzStep;
 	for(int iz=0; iz<inputcom_1.ncar; iz++)
@@ -3180,8 +3190,10 @@ int srTSASE::readfield_srw(f2c_doublecomplex* cin, f2c_integer* irec)
 		double rz = (z_genesis - (SeedRad.zStart + iz0_srw*SeedRad.zStep))/SeedRad.zStep; //0 <= rz <= 1
 		int iz1_srw = iz0_srw + 1;
 
-		long perZ_iz0_srw = perZ*iz0_srw;
-		long perZ_iz1_srw = perZ*iz1_srw;
+		//long perZ_iz0_srw = perZ*iz0_srw;
+		//long perZ_iz1_srw = perZ*iz1_srw;
+		long long perZ_iz0_srw = perZ*iz0_srw;
+		long long perZ_iz1_srw = perZ*iz1_srw;
 
 		//f2c_doublecomplex *p_cin_p_1_p_Ncar_iz = cin + (1 + Ncar*iz);
 		f2c_doublecomplex *p_cin_p_Ncar_iz = cin + (Ncar*iz);
@@ -3204,25 +3216,43 @@ int srTSASE::readfield_srw(f2c_doublecomplex* cin, f2c_integer* irec)
 				double rx = (x_genesis - (SeedRad.xStart + ix0_srw*SeedRad.xStep))/SeedRad.xStep; //0 <= rz <= 1
 				int ix1_srw = ix0_srw + 1;
 
-				long perX_ix0_srw = perX*ix0_srw;
-				long perX_ix1_srw = perX*ix1_srw;
+				//long perX_ix0_srw = perX*ix0_srw;
+				//long perX_ix1_srw = perX*ix1_srw;
+				long long perX_ix0_srw = perX*ix0_srw;
+				long long perX_ix1_srw = perX*ix1_srw;
 
-				long of000 = perZ_iz0_srw + perX_ix0_srw + perT_it0_srw;
-				long of100 = perZ_iz0_srw + perX_ix0_srw + perT_it1_srw;
-				long of010 = perZ_iz0_srw + perX_ix1_srw + perT_it0_srw;
-				long of001 = perZ_iz1_srw + perX_ix0_srw + perT_it0_srw;
-				long of110 = perZ_iz0_srw + perX_ix1_srw + perT_it1_srw;
-				long of101 = perZ_iz1_srw + perX_ix0_srw + perT_it1_srw;
-				long of011 = perZ_iz1_srw + perX_ix1_srw + perT_it0_srw;
-				long of111 = perZ_iz1_srw + perX_ix1_srw + perT_it1_srw;
-				long of000p = of000 + 1;
-				long of100p = of100 + 1;
-				long of010p = of010 + 1;
-				long of001p = of001 + 1;
-				long of110p = of110 + 1;
-				long of101p = of101 + 1;
-				long of011p = of011 + 1;
-				long of111p = of111 + 1;
+				//long of000 = perZ_iz0_srw + perX_ix0_srw + perT_it0_srw;
+				//long of100 = perZ_iz0_srw + perX_ix0_srw + perT_it1_srw;
+				//long of010 = perZ_iz0_srw + perX_ix1_srw + perT_it0_srw;
+				//long of001 = perZ_iz1_srw + perX_ix0_srw + perT_it0_srw;
+				//long of110 = perZ_iz0_srw + perX_ix1_srw + perT_it1_srw;
+				//long of101 = perZ_iz1_srw + perX_ix0_srw + perT_it1_srw;
+				//long of011 = perZ_iz1_srw + perX_ix1_srw + perT_it0_srw;
+				//long of111 = perZ_iz1_srw + perX_ix1_srw + perT_it1_srw;
+				//long of000p = of000 + 1;
+				//long of100p = of100 + 1;
+				//long of010p = of010 + 1;
+				//long of001p = of001 + 1;
+				//long of110p = of110 + 1;
+				//long of101p = of101 + 1;
+				//long of011p = of011 + 1;
+				//long of111p = of111 + 1;
+				long long of000 = perZ_iz0_srw + perX_ix0_srw + perT_it0_srw;
+				long long of100 = perZ_iz0_srw + perX_ix0_srw + perT_it1_srw;
+				long long of010 = perZ_iz0_srw + perX_ix1_srw + perT_it0_srw;
+				long long of001 = perZ_iz1_srw + perX_ix0_srw + perT_it0_srw;
+				long long of110 = perZ_iz0_srw + perX_ix1_srw + perT_it1_srw;
+				long long of101 = perZ_iz1_srw + perX_ix0_srw + perT_it1_srw;
+				long long of011 = perZ_iz1_srw + perX_ix1_srw + perT_it0_srw;
+				long long of111 = perZ_iz1_srw + perX_ix1_srw + perT_it1_srw;
+				long long of000p = of000 + 1;
+				long long of100p = of100 + 1;
+				long long of010p = of010 + 1;
+				long long of001p = of001 + 1;
+				long long of110p = of110 + 1;
+				long long of101p = of101 + 1;
+				long long of011p = of011 + 1;
+				long long of111p = of111 + 1;
 
 				if(pEX0 != 0)
 				{
@@ -3660,25 +3690,33 @@ int srTSASE::FillInSRWRadStruct(srTSRWRadStructAccessData& RadAccessData)
 	double MultForE = RadFieldMultip(); // this is in compliance with SRW
 
 	float *pEx0 = RadAccessData.pBaseRadX, *pEz0 = RadAccessData.pBaseRadZ;
-	long PerX = 2;
-	long PerZ = PerX*RadAccessData.nx;
-	long PerZ_CR = Ncar;
+	//long PerX = 2;
+	//long PerZ = PerX*RadAccessData.nx;
+	//long PerZ_CR = Ncar;
+	long long PerX = 2;
+	long long PerZ = PerX*RadAccessData.nx;
+	long long PerZ_CR = Ncar;
 
 	f2c_doublecomplex *pCRFIELD_0 = cartcom_1.crfield;
 
 	for(long iz=0; iz<(Ncar - 1); iz++)
 	{
-		long izPerZ = iz*PerZ;
-		long izPerZ_CR = iz*PerZ_CR;
+		//long izPerZ = iz*PerZ;
+		//long izPerZ_CR = iz*PerZ_CR;
+		long long izPerZ = iz*PerZ;
+		long long izPerZ_CR = iz*PerZ_CR;
 
 		for(long ix=0; ix<(Ncar - 1); ix++)
 		{//skip internal loop over e since only 1 energy slice is assumed here
-			long ixPerX = ix*PerX;
+			//long ixPerX = ix*PerX;
+			long long ixPerX = ix*PerX;
 
-			long Offset = izPerZ + ixPerX;
+			//long Offset = izPerZ + ixPerX;
+			long long Offset = izPerZ + ixPerX;
 			float *pEx = pEx0 + Offset, *pEz = pEz0 + Offset;
 
-			long OffsetCR = izPerZ_CR + ix;
+			//long OffsetCR = izPerZ_CR + ix;
+			long long OffsetCR = izPerZ_CR + ix;
 			f2c_doublecomplex *pCRFIELD = pCRFIELD_0 + OffsetCR;
 
 			if(IsPlanar) // fill horizontal
@@ -3721,14 +3759,20 @@ int srTSASE::CopyRadSliceToSRWRadStructTD(int iSlice, srTSRWRadStructAccessData*
 	//double MultForE = RadFieldMultip(); // this is in compliance with SRW
 	double MultForE = 1./TDElecFieldConvConstSRW2GENESIS(); // this will give TD Electric field in sqrt(W/mm^2) in SRW
 
-	long PerZ_CR = Ncar;
-	long PerHarm_CR = PerZ_CR*Ncar;
+	//long PerZ_CR = Ncar;
+	//long PerHarm_CR = PerZ_CR*Ncar;
+	long long PerZ_CR = Ncar;
+	long long PerHarm_CR = PerZ_CR*Ncar;
 
-	long PerT = 2;
-	long PerX = PerT*(arRadAccessData->ne); //same for all harmonics
-	long PerZ = PerX*(arRadAccessData->nx);
+	//long PerT = 2;
+	//long PerX = PerT*(arRadAccessData->ne); //same for all harmonics
+	//long PerZ = PerX*(arRadAccessData->nx);
+	long long PerT = 2;
+	long long PerX = PerT*(arRadAccessData->ne); //same for all harmonics
+	long long PerZ = PerX*(arRadAccessData->nx);
 	int it = iSlice - 1;
-	long itPerT = it*PerT;
+	//long itPerT = it*PerT;
+	long long itPerT = it*PerT;
 
 	f2c_doublecomplex *pCRFIELD_0 = cartcom_1.crfield;
 
@@ -3737,22 +3781,29 @@ int srTSASE::CopyRadSliceToSRWRadStructTD(int iSlice, srTSRWRadStructAccessData*
 	for(int iHarm=0; iHarm<numHarm; iHarm++)
 	{
 		float *pEx0 = t_arRad->pBaseRadX, *pEz0 = t_arRad->pBaseRadZ;
-		long iHarmPerHarm_CR = iHarm*PerHarm_CR;
+		//long iHarmPerHarm_CR = iHarm*PerHarm_CR;
+		long long iHarmPerHarm_CR = iHarm*PerHarm_CR;
 
 		for(long iz=0; iz<(Ncar - 1); iz++)
 		{
-			long izPerZ_p_itPerT = iz*PerZ + itPerT;
-			long izPerZ_CR = iz*PerZ_CR;
-			long iHarmPerHarm_p_izPerZ_CR = iHarmPerHarm_CR + izPerZ_CR;
+			//long izPerZ_p_itPerT = iz*PerZ + itPerT;
+			//long izPerZ_CR = iz*PerZ_CR;
+			//long iHarmPerHarm_p_izPerZ_CR = iHarmPerHarm_CR + izPerZ_CR;
+			long long izPerZ_p_itPerT = iz*PerZ + itPerT;
+			long long izPerZ_CR = iz*PerZ_CR;
+			long long iHarmPerHarm_p_izPerZ_CR = iHarmPerHarm_CR + izPerZ_CR;
 
 			for(long ix=0; ix<(Ncar - 1); ix++)
 			{//skip internal loop over e since only 1 energy slice is assumed here
-				long ixPerX = ix*PerX;
-				long Offset = izPerZ_p_itPerT + ixPerX;
+				//long ixPerX = ix*PerX;
+				//long Offset = izPerZ_p_itPerT + ixPerX;
+				long long ixPerX = ix*PerX;
+				long long Offset = izPerZ_p_itPerT + ixPerX;
 				float *pEx = pEx0 + Offset, *pEz = pEz0 + Offset;
 
 				//long OffsetCR = izPerZ_CR + ix;
-				long OffsetCR = iHarmPerHarm_p_izPerZ_CR + ix;
+				//long OffsetCR = iHarmPerHarm_p_izPerZ_CR + ix;
+				long long OffsetCR = iHarmPerHarm_p_izPerZ_CR + ix;
 				f2c_doublecomplex *pCRFIELD = pCRFIELD_0 + OffsetCR;
 
 				if(IsPlanar) // fill horizontal

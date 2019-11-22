@@ -14,6 +14,7 @@
 #include "sroptdrf.h"
 #include "gmfft.h"
 #include "srradmnp.h"
+#include "gmmeth.h"
 
 //*************************************************************************
 
@@ -349,16 +350,21 @@ int srTDriftSpace::PropagateRadiationSimple_PropToWaist(srTSRWRadStructAccessDat
 {// e in eV; Length in m !!!
 	int result;
 
+	pRadAccessData->SetNonZeroWavefrontLimitsToFullRange(); //OCtest271214
+
 	SetupPropBufVars_PropToWaist(pRadAccessData);
 	if(pRadAccessData->Pres != 0) if(result = SetRadRepres(pRadAccessData, 0)) return result;
 
 	PropBufVars.PassNo = 1;
 	if(result = TraverseRadZXE(pRadAccessData)) return result;
 
-	if(result = ResizeBeforePropToWaistIfNecessary(pRadAccessData)) return result;
+	//OC240114 (commented-out)
+	//if(result = ResizeBeforePropToWaistIfNecessary(pRadAccessData)) return result;
 
-	PropBufVars.PassNo = 3;
-	if(result = TraverseRadZXE(pRadAccessData)) return result;
+	//DEBUG
+	//PropBufVars.PassNo = 3;
+	//if(result = TraverseRadZXE(pRadAccessData)) return result;
+	//END DEBUG
 
 	double InvLambda_m = pRadAccessData->eStart*806546.577258;
 	double InvLambda_m_d_Length = InvLambda_m/Length;
@@ -376,6 +382,7 @@ int srTDriftSpace::PropagateRadiationSimple_PropToWaist(srTSRWRadStructAccessDat
 
 	CGenMathFFT2D FFT2D;
 
+	//To remove this?
 	srTDataPtrsForWfrEdgeCorr DataPtrsForWfrEdgeCorr;
 	if(result = SetupWfrEdgeCorrData(pRadAccessData, pRadAccessData->pBaseRadX, pRadAccessData->pBaseRadZ, DataPtrsForWfrEdgeCorr)) return result;
 
@@ -384,6 +391,7 @@ int srTDriftSpace::PropagateRadiationSimple_PropToWaist(srTSRWRadStructAccessDat
 	FFT2DInfo.pData = pRadAccessData->pBaseRadZ;
 	if(result = FFT2D.Make2DFFT(FFT2DInfo)) return result;
 
+	//To remove this?
 	if(DataPtrsForWfrEdgeCorr.WasSetup)
 	{
 		MakeWfrEdgeCorrection(pRadAccessData, pRadAccessData->pBaseRadX, pRadAccessData->pBaseRadZ, DataPtrsForWfrEdgeCorr);
@@ -435,8 +443,9 @@ int srTDriftSpace::PropagateRadiationSimple_PropFromWaist(srTSRWRadStructAccessD
 	FFT2DInfo.Dir = 1;
 	FFT2DInfo.UseGivenStartTrValues = 0;
 
-	srTDataPtrsForWfrEdgeCorr DataPtrsForWfrEdgeCorr;
-	if(result = SetupWfrEdgeCorrData(pRadAccessData, pRadAccessData->pBaseRadX, pRadAccessData->pBaseRadZ, DataPtrsForWfrEdgeCorr)) return result;
+	//OCTEST (commented-out "edge correction")
+	//srTDataPtrsForWfrEdgeCorr DataPtrsForWfrEdgeCorr;
+	//if(result = SetupWfrEdgeCorrData(pRadAccessData, pRadAccessData->pBaseRadX, pRadAccessData->pBaseRadZ, DataPtrsForWfrEdgeCorr)) return result;
 
 	CGenMathFFT2D FFT2D;
 	FFT2DInfo.pData = pRadAccessData->pBaseRadX;
@@ -444,11 +453,12 @@ int srTDriftSpace::PropagateRadiationSimple_PropFromWaist(srTSRWRadStructAccessD
 	FFT2DInfo.pData = pRadAccessData->pBaseRadZ;
 	if(result = FFT2D.Make2DFFT(FFT2DInfo)) return result;
 
-	if(DataPtrsForWfrEdgeCorr.WasSetup)
-	{
-		MakeWfrEdgeCorrection(pRadAccessData, pRadAccessData->pBaseRadX, pRadAccessData->pBaseRadZ, DataPtrsForWfrEdgeCorr);
-		DataPtrsForWfrEdgeCorr.DisposeData();
-	}
+	//OCTEST (commented-out "edge correction")
+	//if(DataPtrsForWfrEdgeCorr.WasSetup)
+	//{
+	//	MakeWfrEdgeCorrection(pRadAccessData, pRadAccessData->pBaseRadX, pRadAccessData->pBaseRadZ, DataPtrsForWfrEdgeCorr);
+	//	DataPtrsForWfrEdgeCorr.DisposeData();
+	//}
 
 // Re-scaling
 	pRadAccessData->xStart = (FFT2DInfo.xStartTr)*LambdaM_Length;
@@ -458,6 +468,7 @@ int srTDriftSpace::PropagateRadiationSimple_PropFromWaist(srTSRWRadStructAccessD
 
 	PropBufVars.PassNo = 2;
 	if(result = TraverseRadZXE(pRadAccessData)) return result;
+
 	return result;
 }
 
@@ -467,14 +478,28 @@ int srTDriftSpace::PropagateRadiationSimple_AnalytTreatQuadPhaseTerm(srTSRWRadSt
 {// e in eV; Length in m !!!
 	int result = 0;
 
+	//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+	//double start;
+	//get_walltime(&start);
+
 	SetupPropBufVars_AnalytTreatQuadPhaseTerm(pRadAccessData);
+
+	//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+	//srwlPrintTime(":PropagateRadiationSimple_AnalytTreatQuadPhaseTerm:SetupPropBufVars_AnalytTreatQuadPhaseTerm",&start);
+
 	if(pRadAccessData->Pres != 0) if(result = SetRadRepres(pRadAccessData, 0)) return result;
+
+	//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+	//srwlPrintTime(":PropagateRadiationSimple_AnalytTreatQuadPhaseTerm:SetRadRepres 1",&start);
 
 	PropBufVars.PassNo = 1; //Remove quadratic term from the Phase in coord. repres.
 	if(result = TraverseRadZXE(pRadAccessData)) return result;
 
+	//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+	//srwlPrintTime(":PropagateRadiationSimple_AnalytTreatQuadPhaseTerm:TraverseRadZXE 1",&start);
+
 		//testOC09302011
-		//return 0;
+		//if(Length == 34.63) return 0;
 
 	double xStartOld = pRadAccessData->xStart, zStartOld = pRadAccessData->zStart;
 	pRadAccessData->xStart = -(pRadAccessData->nx >> 1)*pRadAccessData->xStep;
@@ -488,8 +513,15 @@ int srTDriftSpace::PropagateRadiationSimple_AnalytTreatQuadPhaseTerm(srTSRWRadSt
 
 	if(result = SetRadRepres(pRadAccessData, 1)) return result; //To angular repres.
 
+	//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+	//srwlPrintTime(":PropagateRadiationSimple_AnalytTreatQuadPhaseTerm:SetRadRepres 2",&start);
+
 	PropBufVars.PassNo = 2; //Loop in angular repres.
 	if(result = TraverseRadZXE(pRadAccessData)) return result;
+
+	//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+	//srwlPrintTime(":PropagateRadiationSimple_AnalytTreatQuadPhaseTerm:TraverseRadZXE 2",&start);
+
 		if(pRadAccessData->UseStartTrToShiftAtChangingRepresToCoord)
 		{
 			pRadAccessData->xStartTr += xShift;
@@ -497,6 +529,9 @@ int srTDriftSpace::PropagateRadiationSimple_AnalytTreatQuadPhaseTerm(srTSRWRadSt
 		}
 
 	if(result = SetRadRepres(pRadAccessData, 0)) return result; //Back to coord. repres.
+
+	//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+	//srwlPrintTime(":PropagateRadiationSimple_AnalytTreatQuadPhaseTerm:SetRadRepres 3",&start);
 
 	pRadAccessData->xStart = xStartOld; pRadAccessData->zStart = zStartOld;
 		if(pRadAccessData->UseStartTrToShiftAtChangingRepresToCoord)
@@ -521,8 +556,15 @@ int srTDriftSpace::PropagateRadiationSimple_AnalytTreatQuadPhaseTerm(srTSRWRadSt
 	PropBufVars.PassNo = 3; //Add new quadratic term to the Phase in coord. repres.
 	if(result = TraverseRadZXE(pRadAccessData)) return result;
 
+	//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+	//srwlPrintTime(":PropagateRadiationSimple_AnalytTreatQuadPhaseTerm:TraverseRadZXE 3",&start);
+
 	//pRadAccessData->MirrorFieldData(sign(kx), sign(kz));
 	pRadAccessData->MirrorFieldData((int)sign(PropBufVars.kx_AnalytTreatQuadPhaseTerm), (int)sign(PropBufVars.kz_AnalytTreatQuadPhaseTerm));
+
+	//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+	//srwlPrintTime(":PropagateRadiationSimple_AnalytTreatQuadPhaseTerm:MirrorFieldData",&start);
+
 	//if(kx < 0)
 	if(PropBufVars.kx_AnalytTreatQuadPhaseTerm < 0)
 	{
@@ -547,6 +589,10 @@ int srTDriftSpace::PropagateRadiationSimple_AnalytTreatQuadPhaseTerm(srTSRWRadSt
 void srTDriftSpace::SetupPropBufVars_AnalytTreatQuadPhaseTerm(srTSRWRadStructAccessData* pRadAccessData)
 {// Compute any necessary buf. vars
 
+	//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+	//double start;
+	//get_walltime(&start);
+
 	PropBufVars.xc = pRadAccessData->xc;
 	PropBufVars.zc = pRadAccessData->zc;
 	PropBufVars.invRx = PropBufVars.invRz = 0;
@@ -569,13 +615,27 @@ void srTDriftSpace::SetupPropBufVars_AnalytTreatQuadPhaseTerm(srTSRWRadStructAcc
 
 	//if(pRadAccessData->ne > 1) PropBufVars.UseExactRxRzForAnalytTreatQuadPhaseTerm = true;
 	//OC120412 (commented-out)
+	//OC180813 (uncommented)
+	//OC151014 (commented-out for complicance with steady-state simulations for IXS at EXFEL)
 
 	//testOC30092011
 	if(!PropBufVars.UseExactRxRzForAnalytTreatQuadPhaseTerm)
 	{
-		if(PropBufVars.AnalytTreatSubType == 1) EstimateWfrRadToSub_AnalytTreatQuadPhaseTerm(pRadAccessData, trueRx, trueRz);
+		if(PropBufVars.AnalytTreatSubType == 1) 
+		{
+			EstimateWfrRadToSub_AnalytTreatQuadPhaseTerm(pRadAccessData, trueRx, trueRz);
+
+			//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+			//srwlPrintTime(":SetupPropBufVars_AnalytTreatQuadPhaseTerm:EstimateWfrRadToSub_AnalytTreatQuadPhaseTerm",&start);
+		}
 		//OC15102011 -- under testing (disadvantage of the previous version is the dependence of "trueR" on statistical moments)
-		else if(PropBufVars.AnalytTreatSubType == 2) EstimateWfrRadToSub2_AnalytTreatQuadPhaseTerm(pRadAccessData, trueRx, trueRz); //OC22042013 (uncommented)
+		else if(PropBufVars.AnalytTreatSubType == 2) 
+		{
+			EstimateWfrRadToSub2_AnalytTreatQuadPhaseTerm(pRadAccessData, trueRx, trueRz); //OC22042013 (uncommented)
+		
+			//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+			//srwlPrintTime(":SetupPropBufVars_AnalytTreatQuadPhaseTerm:EstimateWfrRadToSub2_AnalytTreatQuadPhaseTerm",&start);
+		}
 	}
 
 	//if(pRadAccessData->RobsX != 0) 
@@ -717,6 +777,10 @@ void srTDriftSpace::EstimateWfrRadToSub_AnalytTreatQuadPhaseTerm(srTSRWRadStruct
 {
 	if(pRadAccessData == 0) return;
 
+	//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+	//double start;
+	//get_walltime(&start);
+
 	const double infLarge = 1E+23;
 	const double coefAngRange = 0.2; //0.5; //0.6; //0.1; //to tune
 	//const double coefCoordRange = 0.1;
@@ -727,7 +791,7 @@ void srTDriftSpace::EstimateWfrRadToSub_AnalytTreatQuadPhaseTerm(srTSRWRadStruct
 	//long offsetMom = 0;
 	//const int numStatMom = 11;
 	int ieCen = 0;
-	if(pRadAccessData->ne > 1) 
+	if((pRadAccessData->ne > 1) && (pRadAccessData->eStep > 0)) 
 	{
 		photEn0 = pRadAccessData->avgPhotEn;
 
@@ -752,7 +816,13 @@ void srTDriftSpace::EstimateWfrRadToSub_AnalytTreatQuadPhaseTerm(srTSRWRadStruct
 	double SigXp=0, SigZp=0;
 	//double SigX=0, SigZ=0; //OC13112010
 
+	//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+	//srwlPrintTime(":EstimateWfrRadToSub_AnalytTreatQuadPhaseTerm:setup",&start);
+
 	if((*(MomX.pTotPhot) == 0) && (*(MomZ.pTotPhot) == 0)) ComputeRadMoments(pRadAccessData); //OC14092011
+
+	//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+	//srwlPrintTime(":EstimateWfrRadToSub_AnalytTreatQuadPhaseTerm:ComputeRadMoments 1",&start);
 
 	char TreatExOrEz = (*(MomX.pTotPhot) >= *(MomZ.pTotPhot))? 'x' : 'z';
 
@@ -762,7 +832,14 @@ void srTDriftSpace::EstimateWfrRadToSub_AnalytTreatQuadPhaseTerm(srTSRWRadStruct
 		//if((!MomX.precCenMomIsOK) || (MomX.SqrtMxpxp == 0) || (MomX.SqrtMzpzp == 0) || ((abs_s1X <= pRadAccessData->RobsXAbsErr) && (!pRadAccessData->MomWereCalcNum)))
 		{//OC13112010: uncommented
 			ComputeRadMoments(pRadAccessData);
+
+			//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+			//srwlPrintTime(":EstimateWfrRadToSub_AnalytTreatQuadPhaseTerm:ComputeRadMoments 2",&start);
+
 			MomX.ComputeCentralMoments();
+
+			//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+			//srwlPrintTime(":EstimateWfrRadToSub_AnalytTreatQuadPhaseTerm:ComputeCentralMoments 1",&start);
 		}
 		//SigX = MomX.SqrtMxx;
 		SigXp = MomX.SqrtMxpxp;
@@ -775,7 +852,14 @@ void srTDriftSpace::EstimateWfrRadToSub_AnalytTreatQuadPhaseTerm(srTSRWRadStruct
 		//if((!MomZ.precCenMomIsOK) || (MomZ.SqrtMxpxp == 0) || (MomZ.SqrtMzpzp == 0) || ((abs_s1Z <= pRadAccessData->RobsZAbsErr) && (!pRadAccessData->MomWereCalcNum)))
 		{//OC13112010: uncommented
 			ComputeRadMoments(pRadAccessData);
+
+			//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+			//srwlPrintTime(":EstimateWfrRadToSub_AnalytTreatQuadPhaseTerm:ComputeRadMoments 3",&start);
+
 			MomZ.ComputeCentralMoments();
+
+			//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+			//srwlPrintTime(":EstimateWfrRadToSub_AnalytTreatQuadPhaseTerm:ComputeCentralMoments 2",&start);
 		}
 		//SigX = MomZ.SqrtMxx;
 		SigXp = MomZ.SqrtMxpxp;
@@ -946,8 +1030,9 @@ void srTDriftSpace::EstimateWfrRadToSub_AnalytTreatQuadPhaseTerm(srTSRWRadStruct
 			}
 		}
 	}
+	//Added by S.Yakubov (for profiling?) at parallelizing SRW via OpenMP:
+	//srwlPrintTime(":EstimateWfrRadToSub_AnalytTreatQuadPhaseTerm:rest",&start);
 }
-
 
 //*************************************************************************
 
@@ -1010,6 +1095,155 @@ void srTDriftSpace::EstimateTrueWfrRadAndMaxLeff_AnalytTreatQuadPhaseTerm(srTSRW
 
 //*************************************************************************
 
+int srTDriftSpace::PropagateRadiationSimple_NumIntFresnel(srTSRWRadStructAccessData* pRadAccessData) 
+{//OC100914 Aux. method for testing / benchmarking
+//This method attempts to calculate 2D Fresnel integral using the standard numerical integration
+//(e.g. for testing accuracy of the FTT-based integration)
+
+	double *arReExVsX = new double[pRadAccessData->nx];
+	double *arImExVsX = new double[pRadAccessData->nx];
+	double *arReEzVsX = new double[pRadAccessData->nx];
+	double *arImEzVsX = new double[pRadAccessData->nx];
+
+	double *arReFxVsZ = new double[pRadAccessData->nz];
+	double *arImFxVsZ = new double[pRadAccessData->nz];
+	double *arReFzVsZ = new double[pRadAccessData->nz];
+	double *arImFzVsZ = new double[pRadAccessData->nz];
+
+	//long nTot = 2*(pRadAccessData->ne)*(pRadAccessData->nx)*(pRadAccessData->nz);
+	long long nTot = (((long long)(pRadAccessData->ne))*((long long)(pRadAccessData->nx))*((long long)(pRadAccessData->nz))) << 1;
+	float *arAuxEx=0, *arAuxEz=0;
+	if(pRadAccessData->pBaseRadX != 0)
+	{
+		arAuxEx = new float[nTot];
+		float *t = pRadAccessData->pBaseRadX, *tAux = arAuxEx;
+		//for(long i = 0; i < nTot; i++) *(tAux++) = *(t++);
+		for(long long i = 0; i < nTot; i++) *(tAux++) = *(t++);
+	}
+	if(pRadAccessData->pBaseRadZ != 0)
+	{
+		arAuxEz = new float[nTot];
+		float *t = pRadAccessData->pBaseRadZ, *tAux = arAuxEz;
+		//for(long i = 0; i < nTot; i++) *(tAux++) = *(t++);
+		for(long long i = 0; i < nTot; i++) *(tAux++) = *(t++);
+	}
+
+	//long perX = pRadAccessData->ne << 1;
+	//long perZ = perX*pRadAccessData->nx;
+	long long perX = pRadAccessData->ne << 1;
+	long long perZ = perX*pRadAccessData->nx;
+
+	double invL = 1./Length;
+
+	double ePh = pRadAccessData->eStart;
+	for(long ie=0; ie<pRadAccessData->ne; ie++)
+	{
+		double pi_d_lambda_m = ePh*2.533865612E+06;
+		double invPiLambda_m = ePh*invL*0.80655447456E+06;
+
+		//long iePerE = ie << 1;
+		long long iePerE = ie << 1;
+		double z = pRadAccessData->zStart;
+		for(long iz=0; iz<pRadAccessData->nz; iz++)
+		{
+			//long izPerZ = iz*perZ;
+			long long izPerZ = iz*perZ;
+			double x = pRadAccessData->xStart;
+			for(long ix=0; ix<pRadAccessData->nx; ix++)
+			{			
+				double z1 = pRadAccessData->zStart;
+				for(long iz1=0; iz1<pRadAccessData->nz; iz1++)
+				{
+					double dz = (z1 - z);
+					double dze2 = dz*dz;
+
+					//long iz1PerZ = iz1*perZ;
+					long long iz1PerZ = iz1*perZ;
+					double x1 = pRadAccessData->xStart;
+					for(long ix1=0; ix1<pRadAccessData->nx; ix1++)
+					{
+						double dx = (x1 - x);
+						double dxe2 = dx*dx;
+						double quadTerm = (dxe2 + dze2)*invL;
+						double a = quadTerm*invL;
+						double phase = pi_d_lambda_m*quadTerm*(1. - 0.25*a + 0.125*a*a);
+						double cosPh = cos(phase), sinPh = sin(phase);
+
+						//long ix1PerX = ix1*perX;
+						//long ofst1 = iz1PerZ + ix1PerX + iePerE;
+						long long ix1PerX = ix1*perX;
+						long long ofst1 = iz1PerZ + ix1PerX + iePerE;
+						float *pEx1 = arAuxEx + ofst1;
+						float *pEz1 = arAuxEz + ofst1;
+
+						if(arAuxEx != 0)
+						{
+							float ReEx1 = *pEx1, ImEx1 = *(pEx1 + 1);
+							arReExVsX[ix1] = invPiLambda_m*(ReEx1*sinPh + ImEx1*cosPh);
+							arImExVsX[ix1] = invPiLambda_m*(ImEx1*sinPh - ReEx1*cosPh);
+						}
+						if(arAuxEz != 0)
+						{
+							float ReEz1 = *pEz1, ImEz1 = *(pEz1 + 1);
+							arReEzVsX[ix1] = invPiLambda_m*(ReEz1*sinPh + ImEz1*cosPh);
+							arImEzVsX[ix1] = invPiLambda_m*(ImEz1*sinPh - ReEz1*cosPh);
+						}
+						x1 += pRadAccessData->xStep;
+					}
+					if(arAuxEx != 0)
+					{
+						arReFxVsZ[iz1] = CGenMathMeth::Integ1D_FuncDefByArray(arReExVsX, pRadAccessData->nx, pRadAccessData->xStep);
+						arImFxVsZ[iz1] = CGenMathMeth::Integ1D_FuncDefByArray(arImExVsX, pRadAccessData->nx, pRadAccessData->xStep);
+					}
+					if(arAuxEz != 0)
+					{
+						arReFzVsZ[iz1] = CGenMathMeth::Integ1D_FuncDefByArray(arReEzVsX, pRadAccessData->nx, pRadAccessData->xStep);
+						arImFzVsZ[iz1] = CGenMathMeth::Integ1D_FuncDefByArray(arImEzVsX, pRadAccessData->nx, pRadAccessData->xStep);
+					}
+					z1 += pRadAccessData->zStep;
+				}
+
+				//long ixPerX = ix*perX;
+				//long ofst = izPerZ + ixPerX + iePerE;
+				long long ixPerX = ix*perX;
+				long long ofst = izPerZ + ixPerX + iePerE;
+				float *pEx = pRadAccessData->pBaseRadX + ofst;
+				float *pEz = pRadAccessData->pBaseRadZ + ofst;
+
+				if(arAuxEx != 0)
+				{
+					*pEx = (float)CGenMathMeth::Integ1D_FuncDefByArray(arReFxVsZ, pRadAccessData->nz, pRadAccessData->zStep);
+					*(pEx + 1) = (float)CGenMathMeth::Integ1D_FuncDefByArray(arImFxVsZ, pRadAccessData->nz, pRadAccessData->zStep);
+				}
+				if(arAuxEz != 0)
+				{
+					*pEz = (float)CGenMathMeth::Integ1D_FuncDefByArray(arReFzVsZ, pRadAccessData->nz, pRadAccessData->zStep);
+					*(pEz + 1) = (float)CGenMathMeth::Integ1D_FuncDefByArray(arImFzVsZ, pRadAccessData->nz, pRadAccessData->zStep);
+				}
+				x += pRadAccessData->xStep;
+			}
+			z += pRadAccessData->zStep;
+		}
+		ePh += pRadAccessData->eStep;
+	}
+
+	if(arReExVsX != 0) delete[] arReExVsX;
+	if(arImExVsX != 0) delete[] arImExVsX;
+	if(arReEzVsX != 0) delete[] arReEzVsX;
+	if(arImEzVsX != 0) delete[] arImEzVsX;
+
+	if(arReFxVsZ != 0) delete[] arReFxVsZ;
+	if(arImFxVsZ != 0) delete[] arImFxVsZ;
+	if(arReFzVsZ != 0) delete[] arReFzVsZ;
+	if(arImFzVsZ != 0) delete[] arImFzVsZ;
+
+	if(arAuxEx != 0) delete[] arAuxEx;
+	if(arAuxEz != 0) delete[] arAuxEz;
+	return 0;
+}
+
+//*************************************************************************
+
 int srTDriftSpace::PropagateRadiationSimple1D_PropToWaist(srTRadSect1D* pSect1D)
 {
 	int result;
@@ -1025,14 +1259,16 @@ int srTDriftSpace::PropagateRadiationSimple1D_PropToWaist(srTRadSect1D* pSect1D)
 	double InvLambda_m_d_Length = InvLambda_m/Length;
 	double LambdaM_Length = 1./InvLambda_m_d_Length;
 
-	long TwoNp = pSect1D->np << 1;
+	//long TwoNp = pSect1D->np << 1;
+	long long TwoNp = pSect1D->np << 1;
 	float *AuxCont = new float[TwoNp << 1];
 	if(AuxCont == 0) return MEMORY_ALLOCATION_FAILURE;
 
 	float *pAuxX = AuxCont, *pAuxZ = AuxCont + TwoNp;
 	float *tAuxX = pAuxX, *tAuxZ = pAuxZ;
 	float *tEx = pSect1D->pEx, *tEz = pSect1D->pEz;
-	for(long i=0; i<TwoNp; i++)
+	//for(long i=0; i<TwoNp; i++)
+	for(long long i=0; i<TwoNp; i++)
 	{
 		*(tAuxX++) = *(tEx++); 
 		*(tAuxZ++) = *(tEz++);

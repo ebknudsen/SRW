@@ -52,7 +52,8 @@ class srTRadIntPowerDensity {
 
 	double *BtxArrP[50], *XArrP[50], *BxArrP[50];
 	double *BtzArrP[50], *ZArrP[50], *BzArrP[50];
-	long AmOfPointsOnLevel[50];
+	//long AmOfPointsOnLevel[50];
+	long long AmOfPointsOnLevel[50];
 	long NumberOfLevelsFilledG;
 	long MaxLevelForMeth_01G;
 	char ProbablyTheSameLoopG;
@@ -99,13 +100,17 @@ public:
 	int SetUpFieldBasedArrays();
 	void AnalizeFinalResultsSymmetry(char& FinalResAreSymOverX, char& FinalResAreSymOverZ);
 	void FillInSymPartsOfResults(char FinalResAreSymOverX, char FinalResAreSymOverZ, srTPowDensStructAccessData& PowDensAccessData);
-	void SetupNotCompIntervBorders(double MinValNotComp, double sStart, double sStep, long Np, long& AmOfInterv);
+	//void SetupNotCompIntervBorders(double MinValNotComp, double sStart, double sStep, long Np, long& AmOfInterv);
+	void SetupNotCompIntervBorders(double MinValNotComp, double sStart, double sStep, long long Np, long long& AmOfInterv);
 	int TreatFiniteElecBeamEmittance(srTPowDensStructAccessData&, gmTrans* pTrfObsPl =0);
 	int TreatFiniteElecBeamEmittance1D(srTPowDensStructAccessData&, char);
 	void DetermineSingleElecPowDensEffSizes(srTPowDensStructAccessData&, double& MxxPowSingleE, double& MzzPowSingleE);
 	void DetermineResizeBeforeConv(double MxxElecEff, double MzzElecEff, double MxxPowSingleE, double MzzPowSingleE, srTRadResize& Resize);
+	//void ConstructDataForConv(srTPowDensStructAccessData& PowDensAccessData, float* NewData, long long NewNx, long long NewNz);
 	void ConstructDataForConv(srTPowDensStructAccessData& PowDensAccessData, float* NewData, long NewNx, long NewNz);
+	//int PerformConvolutionWithGaussian(float* AuxConvData, long long NxAux, long long NzAux, double MxxElecEff, double MzzElecEff);
 	int PerformConvolutionWithGaussian(float* AuxConvData, long NxAux, long NzAux, double MxxElecEff, double MzzElecEff);
+	//void ExtractFinalDataAfterConv(float* AuxConvData, long long NxAux, long long NzAux, srTPowDensStructAccessData& PowDensAccessData);
 	void ExtractFinalDataAfterConv(float* AuxConvData, long NxAux, long NzAux, srTPowDensStructAccessData& PowDensAccessData);
 
 	void SetPrecParams(srTParPrecPowDens* pPrecPowDens);
@@ -113,7 +118,8 @@ public:
 	void SetupNativeRotation();
 	int ComputePowerDensityAtPointConstMagField(float* pPowDens);
 
-	int FillNextLevel(int LevelNo, double sStart, double sEnd, long Np)
+	//int FillNextLevel(int LevelNo, double sStart, double sEnd, long Np)
+	int FillNextLevel(int LevelNo, double sStart, double sEnd, long long Np)
 	{
 		double* BasePtr = new double[Np*6];
 		if(BasePtr == 0) return MEMORY_ALLOCATION_FAILURE;
@@ -178,16 +184,24 @@ public:
 		double invRinst = One_d_ymis;
 
 		double auxFact = Nx*Nx + Nz*Nz;
-		if(auxFact > 0.99) 
+		//OCTEST (commented-out)
+		//if(auxFact > 0.99) 
+		//{
+		//	double multFact = sqrt(0.99/auxFact);
+		//	Nx *= multFact; Nz *= multFact;
+		//	auxFact = 0.99; //to calculate angles more accurately??
+		//}
+
+		//OC27092016
+		double Ny = 0.;
+		if(auxFact < 1.)
 		{
-			double multFact = sqrt(0.99/auxFact);
-			Nx *= multFact; Nz *= multFact;
-			auxFact = 0.99; //to calculate angles more accurately??
+			Ny = (auxFact > 0.000001)? sqrt(1. - auxFact) : 1 - 0.5*auxFact - 0.125*auxFact*auxFact;
 		}
 
 		//double Ny = (auxFact > 0.01)? sqrt(1. - auxFact) : 1 - 0.5*auxFact - 0.125*auxFact*auxFact;
 		//double Ny = (auxFact > 0.001)? sqrt(1. - auxFact) : 1 - 0.5*auxFact - 0.125*auxFact*auxFact;
-		double Ny = (auxFact > 0.000001)? sqrt(1. - auxFact) : 1 - 0.5*auxFact - 0.125*auxFact*auxFact;
+		//double Ny = (auxFact > 0.000001)? sqrt(1. - auxFact) : 1 - 0.5*auxFact - 0.125*auxFact*auxFact; //OC27092016 (commented-out)
 
 		double cosFactProj = Ny; //sqrt(1. - auxFact);
 		double vEyP_x = 0, vEyP_y = 1, vEyP_z = 0;

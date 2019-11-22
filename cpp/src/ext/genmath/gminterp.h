@@ -24,6 +24,9 @@
 #ifndef MEMORY_ALLOCATION_FAILURE
 #define MEMORY_ALLOCATION_FAILURE 8 + 10000 //in line with SRW
 #endif
+#ifndef CAN_NOT_FIND_IND_FOR_INTERP
+#define CAN_NOT_FIND_IND_FOR_INTERP 187 + 10000 //in line with SRW
+#endif
 
 //-------------------------------------------------------------------------
 
@@ -51,6 +54,8 @@ public:
 	{
 		if((OrigF == 0) || (InOrigNp == 0)) throw MATH_INTERP_STRUCT_WAS_NOT_SETUP;
 
+		mSplineY2Arr = mSplineArgTabArr = mSplineValTabArr = 0; //OC011213
+
         AllCf = 0;
 		PlnCf = 0;
         OrigNp = InOrigNp;
@@ -64,7 +69,7 @@ public:
 	CGenMathInterp()
 	{
 		mMethNo = 0;
-        mSplineY2Arr = 0; mSplineArgTabArr = 0; mSplineValTabArr = 0;
+        mSplineY2Arr = mSplineArgTabArr = mSplineValTabArr = 0;
 		mArgStep = 0; mArgStart = 0;
 		mSplineTabNp = 0;
 
@@ -87,12 +92,21 @@ public:
 	static double InterpCubicSpline(double *xa, double *ya, double *y2a, int n, double x);
 	static double Deriv1(double* f, double h, int PoIndx, int AmOfPo);
 	static double Derivative(double* f, double h, int PoIndx, int AmOfPo=5);
+	//static bool TryToFindRectMesh(double* arX, double* arY, int nPtTot, double* arResMeshX, double* arResMeshY, int& nMeshX, int& nMeshY, int* arPtMeshInd, double arMinMaxX[2], double arMinMaxY[2]);
+	static bool TryToFindRectMesh(double* arX, double* arY, int nPtTot, double* arResMeshX, double* arResMeshY, int& nMeshX, int& nMeshY, double arMinMaxX[2], double arMinMaxY[2]);
+	//static void SelectPointsForInterp2d(double x, double y, double* arX, double* arY, int nPtTot, int ord, int* arResInd, int& nResInd);
+	static int SelectPointsForInterp2d(double x, double y, double* arX, double* arY, int nPtTot, int& ord, int* arResInd, int& nResInd, bool& resMeshIsRect);
+	static void SelectPointsForInterp1d2d(double* arGaps, double* arPhases, int nVals, int* arResInds, int& nResInds, double arPrecPar[5]);
+	static int TryToFindMeshPointForPars(double* arPar1, double* arPar2, int nVals, double* arPrecPar);
 
 	void Interpolate(double sSt, double sStp, int Np, double* pInterpData);
 	void CompDerivForOrigData(double* OrigF, double* DerF);
 
+	//void InitCubicSpline(double *x, double *y, long long np);
 	void InitCubicSpline(double *x, double *y, int np);
+	//void InitCubicSplineU(double xStart, double xStep, double *y, long long np);
 	void InitCubicSplineU(double xStart, double xStep, double *y, int np);
+
 	double Interp1D(double x)
 	{
 		if((mMethNo == 1) && (mSplineY2Arr != 0) && (mSplineArgTabArr != 0) && (mSplineValTabArr != 0) && (mSplineTabNp > 0))
@@ -102,7 +116,8 @@ public:
 		return 0;
 	}
 	
-	double InterpRelCubicSpline(double b, int i0, double curArgStep)
+	double InterpRelCubicSpline(double b, long long i0, double curArgStep) //OC26042019
+	//double InterpRelCubicSpline(double b, int i0, double curArgStep)
 	{
 		if((mSplineY2Arr == 0) || (mSplineValTabArr == 0)) return 0;
 
@@ -112,7 +127,8 @@ public:
 		double y2a_lo = mSplineY2Arr[i0], y2a_hi = mSplineY2Arr[i0 + 1];
 		return a*ya_lo + b*ya_hi + ((a*a*a - a)*y2a_lo + (b*b*b - b)*y2a_hi)*(curArgStep*curArgStep)/6.0;
 	}
-	double InterpRelCubicSplineU(double b, int i0)
+	double InterpRelCubicSplineU(double b, long long i0) //OC26042019
+	//double InterpRelCubicSplineU(double b, int i0)
 	{
 		if((mSplineY2Arr == 0) || (mSplineValTabArr == 0) || (mArgStep == 0)) return 0;
 
@@ -166,7 +182,50 @@ public:
         if(PlnCf != 0) { delete[] PlnCf; PlnCf = 0;}
     }
 
+	static int FindIndOfPointOnIrregMesh2d(double x, double y, double* arX, double* arY, int nPtTot, double relTol=1.e-09)
+	{
+		//if((nPtTot <= 0) || (arX == 0) || (arY == 0)) return -1;
+		if((nPtTot <= 0) || (arX == 0) || (arY == 0)) throw CAN_NOT_FIND_IND_FOR_INTERP;
 
+		if(nPtTot == 1)
+		{
+			double dXi = x - (*arX);
+			double curTolX = (*arX)*relTol;
+			if((-curTolX <= dXi) && (dXi <= curTolX))
+			{
+				double dYi = y - (*arY);
+				double curTolY = (*arY)*relTol;
+				if((-curTolY <= dYi) && (dYi <= curTolY))
+				{
+					return 0;
+				}
+			}
+		}
+
+		//double curTolX = (arX[1] - arX[0])*relTol;
+		//double curTolY = (arY[1] - arY[0])*relTol;
+		int nPtTot_mi_1 = nPtTot - 1; //OC31102017
+		double curTolX = (arX[nPtTot_mi_1] - arX[0])*relTol;
+		double curTolY = (arY[nPtTot_mi_1] - arY[0])*relTol;
+		for(int i=0; i<nPtTot; i++)
+		{
+			double dXi = x - arX[i];
+			if((-curTolX <= dXi) && (dXi <= curTolX))
+			{
+				double dYi = y - arY[i];
+				if((-curTolY <= dYi) && (dYi <= curTolY)) return i;
+			}
+
+			//OC31102017 (commented-out)
+			//if(i > 1)
+			//{
+			//	curTolX = (arX[i] - arX[i - 1])*relTol;
+			//	curTolY = (arY[i] - arY[i - 1])*relTol;
+			//}
+		}
+		throw CAN_NOT_FIND_IND_FOR_INTERP;
+		return -1;
+	}
 
 	static double Interp3dBilin(double* inP, double* inArrArgBounds, double* inArrFunc)
 	{
@@ -324,6 +383,71 @@ public:
 		return f00 + xt*(a10 + xt*(a20 + xt*(a30 + yt*a31) + yt*a21) + yt*(a11 + yt*(a12 + yt*a13))) + yt*(a01 + yt*(a02 + yt*a03));
 	}
 
+	static double Interp2dBiCubic12pRecVar(double x, double y, double* arXY, double* arF)
+	{//bi-cubic interpolation on rectangular, but variable step-size mesh (12 points), for relative arguments, "central" point (that correspopnds to f00) is x = 0, y = 0
+		double *p = arF;
+		double f0m1,f1m1,fm10,f00,f10,f20,fm11,f01,f11,f21,f02,f12;
+		f0m1=*(p++); f1m1=*(p++); fm10=*(p++); f00=*(p++); f10=*(p++); f20=*(p++); fm11=*(p++); f01=*(p++); f11=*(p++); f21=*(p++); f02=*(p++); f12=*(p++); 
+
+		double xm1 = *(arXY++), ym1 = *(arXY++);
+		//double x0 = 0, y0 = 0;
+		double x1 = *(arXY++), y1 = *(arXY++);
+		double x2 = *(arXY++), y2 = *(arXY++);
+
+		double x1_mi_xm1 = x1 - xm1, x1_mi_x2 = x1 - x2, x2_mi_xm1 = x2 - xm1;
+		double y1_mi_ym1 = y1 - ym1, y2_mi_ym1 = y2 - ym1, y1_mi_y2 = y1 - y2;
+
+		double fm10_d_x1_mi_xm1_x2_mi_xm1_xm1 = fm10/(x1_mi_xm1*x2_mi_xm1*xm1);
+		double x1_mi_x2_x2_x2_mi_xm1 = x1_mi_x2*x2*x2_mi_xm1;
+		double x1_x1_mi_x2_x1_mi_xm1 = x1*x1_mi_x2*x1_mi_xm1;
+		double f10_d_x1_x1_mi_x2_x1_mi_xm1 = f10/x1_x1_mi_x2_x1_mi_xm1;
+		double f20_d_x1_mi_x2_x2_x2_mi_xm1 = f20/x1_mi_x2_x2_x2_mi_xm1;
+		double x1_mi_xm1_xm1_x2_mi_xm1 = x1_mi_xm1*xm1*x2_mi_xm1;
+		double x1_mi_xm1_xm1_x2_mi_xm1_y1 = x1_mi_xm1_xm1_x2_mi_xm1*y1;
+		double y1_mi_ym1_y2_mi_ym1_ym1 = y1_mi_ym1*y2_mi_ym1*ym1;
+		double f0m1_d_y1_mi_ym1_y2_mi_ym1_ym1 = f0m1/y1_mi_ym1_y2_mi_ym1_ym1;
+		double x1_p_x2 = x1 + x2, x1_p_xm1 = x1 + xm1, x2_p_xm1 = x2 + xm1;
+		double x1_x2 = x1*x2, x1_xm1 = x1*xm1, x2_xm1 = x2*xm1;
+		double x1_x2_xm1 = x1_x2*xm1;
+		double y1_mi_ym1_ym1_y2_mi_ym1 = y1_mi_ym1*ym1*y2_mi_ym1;
+		double x1_y1_mi_ym1_ym1_y2_mi_ym1 = x1*y1_mi_ym1_ym1_y2_mi_ym1;
+		double f0m1_mi_f1m1_d_x1_y1_mi_ym1_ym1_y2_mi_ym1 = (f0m1 - f1m1)/x1_y1_mi_ym1_ym1_y2_mi_ym1;
+		double y1_mi_y2_y2_y2_mi_ym1 = y1_mi_y2*y2*y2_mi_ym1;
+		double f02_d_y1_mi_y2_y2_y2_mi_ym1 = f02/y1_mi_y2_y2_y2_mi_ym1, x1_y1_mi_y2_y2_y2_mi_ym1 = x1*y1_mi_y2_y2_y2_mi_ym1;
+		double y1_mi_y2_y1_mi_ym1 = y1_mi_y2*y1_mi_ym1;
+		double y1_mi_y2_y1_mi_ym1_x1 = y1_mi_y2_y1_mi_ym1*x1;
+		double y1_y1_mi_y2_y1_mi_ym1 = y1*y1_mi_y2_y1_mi_ym1;
+		double f01_d_y1_y1_mi_y2_y1_mi_ym1 = f01/y1_y1_mi_y2_y1_mi_ym1;
+		double f20_mi_f21_d_x1_mi_x2_x2_x2_mi_xm1_y1 = (f20 - f21)/(x1_mi_x2_x2_x2_mi_xm1*y1);
+		double x1_x1_mi_x2_x1_mi_xm1_y1 = x1_x1_mi_x2_x1_mi_xm1*y1;
+		double f11_mi_f10_d_x1_x1_mi_x2_x1_mi_xm1_y1 = (f11 - f10)/x1_x1_mi_x2_x1_mi_xm1_y1;
+		double x1_mi_x2_x2_mi_xm1_x2 = x1_mi_x2*x2_mi_xm1*x2;
+		double fm10_mi_fm11_d_x1_mi_xm1_xm1_x2_mi_xm1_y1 = (fm10 - fm11)/x1_mi_xm1_xm1_x2_mi_xm1_y1;
+		double y2_y1_mi_y2_y2_mi_ym1 = y2*y1_mi_y2*y2_mi_ym1;
+		double y1_p_y2 = y1 + y2, y1_p_ym1 = y1 + ym1, y2_p_ym1 = y2 + ym1;
+		double y1_y2 = y1*y2, y1_ym1 = y1*ym1, y2_ym1 = y2*ym1;
+		double y1_y2_ym1 = y1_y2*ym1;
+		double f00_mi_f10_d_x1_y1_y2_ym1 = (f00 - f10)/(x1*y1_y2_ym1);
+		double f00_mi_f01_d_x1_x2_xm1_y1 = (f00 - f01)/(x1_x2_xm1*y1);
+		double f02_mi_f12_d_x1_y1_mi_y2_y2_y2_mi_ym1 = (f02 - f12)/x1_y1_mi_y2_y2_y2_mi_ym1;
+		double f11_mi_f01_d_x1_y1_y1_mi_y2_y1_mi_ym1 = (f11 - f01)/(x1*y1_y1_mi_y2_y1_mi_ym1);
+		double x2_xm1_d_x1_x1_mi_x2_x1_mi_xm1_y1 = x2_xm1/x1_x1_mi_x2_x1_mi_xm1_y1;
+
+		double a10 = x1_x2*fm10_d_x1_mi_xm1_x2_mi_xm1_xm1 - x1_xm1*f20_d_x1_mi_x2_x2_x2_mi_xm1 + x2_xm1*f10_d_x1_x1_mi_x2_x1_mi_xm1 - f00*(1/x1 + 1/x2 + 1/xm1);
+		double a20 = -x1_p_x2*fm10_d_x1_mi_xm1_x2_mi_xm1_xm1 + x1_p_xm1*f20_d_x1_mi_x2_x2_x2_mi_xm1 - x2_p_xm1*f10_d_x1_x1_mi_x2_x1_mi_xm1 + f00*(1/x1_x2 + 1/x1_xm1 + 1/x2_xm1);
+		double a30 = fm10_d_x1_mi_xm1_x2_mi_xm1_xm1 + f10_d_x1_x1_mi_x2_x1_mi_xm1 - f20_d_x1_mi_x2_x2_x2_mi_xm1 - f00/x1_x2_xm1;
+		double a01 = y1_y2*f0m1_d_y1_mi_ym1_y2_mi_ym1_ym1 - y1_ym1*f02_d_y1_mi_y2_y2_y2_mi_ym1 + y2_ym1*f01_d_y1_y1_mi_y2_y1_mi_ym1 - f00*(1/y1 + 1/y2 + 1/ym1);
+		double a11 = -y1_y2*f0m1_mi_f1m1_d_x1_y1_mi_ym1_ym1_y2_mi_ym1 + y1_ym1*f02_mi_f12_d_x1_y1_mi_y2_y2_y2_mi_ym1 - x1_x2*fm10_mi_fm11_d_x1_mi_xm1_xm1_x2_mi_xm1_y1 + x1_xm1*f20_mi_f21_d_x1_mi_x2_x2_x2_mi_xm1_y1 - f10*(x2_xm1_d_x1_x1_mi_x2_x1_mi_xm1_y1 + 1/(x1*y2) + 1/(x1*ym1)) - f01*(1/(x2*y1) + 1/(xm1*y1) + y2_ym1/(y1*y1_mi_y2_y1_mi_ym1_x1)) + f11*(x2_xm1_d_x1_x1_mi_x2_x1_mi_xm1_y1 + (ym1 - y1_mi_y2)/y1_mi_y2_y1_mi_ym1_x1) + f00*(1/(x1*y1) + 1/(x2*y1) + 1/(xm1*y1) + 1/(x1*y2) + 1/(x1*ym1));
+		double a21 = x1_p_x2*fm10_mi_fm11_d_x1_mi_xm1_xm1_x2_mi_xm1_y1 - x1_p_xm1*f20_mi_f21_d_x1_mi_x2_x2_x2_mi_xm1_y1 - x2_p_xm1*f11_mi_f10_d_x1_x1_mi_x2_x1_mi_xm1_y1 - (x1_p_x2 + xm1)*f00_mi_f01_d_x1_x2_xm1_y1;
+		double a31 = -fm10_mi_fm11_d_x1_mi_xm1_xm1_x2_mi_xm1_y1 + f00_mi_f01_d_x1_x2_xm1_y1 + f11_mi_f10_d_x1_x1_mi_x2_x1_mi_xm1_y1 + f20_mi_f21_d_x1_mi_x2_x2_x2_mi_xm1_y1;
+		double a02 = -y1_p_y2*f0m1_d_y1_mi_ym1_y2_mi_ym1_ym1 + y1_p_ym1*f02_d_y1_mi_y2_y2_y2_mi_ym1 + f00*(1/y1_y2 + 1/y1_ym1 + 1/y2_ym1) - y2_p_ym1*f01_d_y1_y1_mi_y2_y1_mi_ym1; 
+		double a12 = y1_p_y2*f0m1_mi_f1m1_d_x1_y1_mi_ym1_ym1_y2_mi_ym1 - y1_p_ym1*f02_mi_f12_d_x1_y1_mi_y2_y2_y2_mi_ym1 - y2_p_ym1*f11_mi_f01_d_x1_y1_y1_mi_y2_y1_mi_ym1 - (y1_p_y2 + ym1)*f00_mi_f10_d_x1_y1_y2_ym1;
+		double a03 = f0m1_d_y1_mi_ym1_y2_mi_ym1_ym1 + f01_d_y1_y1_mi_y2_y1_mi_ym1 - f02_d_y1_mi_y2_y2_y2_mi_ym1 - f00/y1_y2_ym1;
+		double a13 = f11_mi_f01_d_x1_y1_y1_mi_y2_y1_mi_ym1 - f0m1_mi_f1m1_d_x1_y1_mi_ym1_ym1_y2_mi_ym1 + f00_mi_f10_d_x1_y1_y2_ym1 + f02_mi_f12_d_x1_y1_mi_y2_y2_y2_mi_ym1;
+
+		return f00 + x*(a10 + x*(a20 + a21*y + x*(a30 + a31*y)) + y*(a11 + y*(a12 + a13*y))) + y*(a01 + y*(a02 + a03*y));
+	}
+
 	static double Interp2dBiLinRec(double xt, double yt, double* arF)
 	{//bilinear interpolation on rectangular mesh, for normalized arguments (0 <= xt <= 1, 0 <= yt <= 1)
 		//double *p = arF;
@@ -358,7 +482,7 @@ public:
 	}
 
 	static double Interp2dBiQuad5Rec(double xt, double yt, double* arF)
-	{//bi-quadratic interpolation on rectangular mesh, for normalized arguments (-1 <= xt <= 1, -1 <= yt <= 1)
+	{//bi-quadratic (5-point) interpolation on rectangular regular mesh, for normalized arguments (-1 <= xt <= 1, -1 <= yt <= 1)
 		//double *p = arF;
 		double f0m1 = *(arF++);
 		double fm10 = *(arF++);
@@ -454,6 +578,33 @@ public:
 		return x*(x*a20 + a10) + y*(y*a02 + a01) + f00;
 	}
 
+	static double Interp1dLinRel(double xr, double f0, double f1)
+	{//simple linear interpolation for xr being relative argument (f = f0 at xr = 0, f = f1 at xr = 1)
+		return f0 + xr*(f1 - f0);
+	}
+
+	static double Interp1dQuadVarRel(double xr, double hmdhp, double fm1, double f0, double fp1)
+	{//simple quadratic interpolation for xr being relative argument (f = fm1 at xr = -hmdhp, f = f0 at xr = 0, f = fp1 at xr = 1)
+		double buf = 1./((hmdhp + 1.)*hmdhp);
+		double a1 = (f0 - fm1 + (fp1 - f0)*hmdhp*hmdhp)*buf;
+		double a2 = (fm1 - f0 + (fp1 - f0)*hmdhp)*buf;
+		return f0 + (a1 + a2*xr)*xr;
+	}
+
+	static double Interp1dCubVarRel(double xr, double hmdhp1, double hp2dhp1, double fm1, double f0, double fp1, double fp2)
+	{//simple cubic interpolation for xr being relative argument (f = fm1 at xr = -hmdhp1, f = f0 at xr = 0, f = fp1 at xr = 1, f = fp2 at xr = hp2dhp1)
+		double buf = 1./(hmdhp1*(1 + hmdhp1)*(hp2dhp1 - 1)*hp2dhp1*(hmdhp1 + hp2dhp1));
+		double hmdhp1E2 = hmdhp1*hmdhp1;
+		double hmdhp1E3 = hmdhp1E2*hmdhp1;
+		double hp2dhp1E2 = hp2dhp1*hp2dhp1;
+		double hp2dhp1E3 = hp2dhp1E2*hp2dhp1;
+		double a1 = -((fp2-f0)*hmdhp1E2 + (fp2-f0)*hmdhp1E3 + (f0-fm1)*hp2dhp1E2 + (f0-fp1)*hmdhp1E3*hp2dhp1E2 + (fm1-f0)*hp2dhp1E3 + (f0-fp1)*hmdhp1E2*hp2dhp1E3)*buf;
+		double buf1 = f0/(hmdhp1*hp2dhp1);
+		double a2 = buf1*(hmdhp1 - hp2dhp1 - 1.) - (fp2*hmdhp1 - fp2*hmdhp1E3 + fm1*hp2dhp1 + fp1*hmdhp1E3*hp2dhp1 - fm1*hp2dhp1E3 - fp1*hmdhp1*hp2dhp1E3)*buf;
+		double a3 = buf1 + (fp2*hmdhp1 + fp2*hmdhp1E2 + fm1*hp2dhp1 - fp1*hmdhp1E2*hp2dhp1 - fm1*hp2dhp1E2 - fp1*hmdhp1*hp2dhp1E2)*buf;
+		return f0 + (a1 + (a2 + a3*xr)*xr)*xr;
+	}
+
 	static double InterpCubHalfStep(double* f, int i)
 	{//interpolation by cubic poligon for a point in the middle between equidistant points for which the function f is defined 
 		if(i < 0) return 0.0625*(5.*f[0] + 15.*f[1] - 5.*f[2] + f[3]);
@@ -475,6 +626,158 @@ public:
 		return (f11 + f00 - f10 - f01)*xr*yr + (f10 - f00)*xr + (f01 - f00)*xr + f00;
 	}
 
+	template<class T> static double InterpOnRegMesh2d(double x, double y, double x_min, double x_step, long long nx, double y_min, double y_step, long long ny, T* ar_f, char ord=3, long long ix_per=1, long long ix_ofst=0) //OC26042019
+	//template<class T> static double InterpOnRegMesh2d(double x, double y, double x_min, double x_step, long nx, double y_min, double y_step, long ny, T* ar_f, char ord=3, long ix_per=1, long ix_ofst=0)
+	{//OC20112018: "copied" from uti_math.py: uti_math.interp_2d
+
+		if((x_step == 0) || (y_step == 0) || (ar_f == 0) || (ord < 1) || (ord > 3)) throw CAN_NOT_FIND_IND_FOR_INTERP;
+		const double truncTol = 1.e-12; //to steer
+
+		if(ord == 1) //bi-linear interpolation based on 4 points
+		{
+			//long ix0 = (long)((x - x_min)/x_step + truncTol);
+			long long ix0 = (long long)((x - x_min)/x_step + truncTol); //OC26042019
+	        if(ix0 < 0) ix0 = 0;
+			else if(ix0 >= nx - 1) ix0 = nx - 2;
+
+			//long ix1 = ix0 + 1;
+			long long ix1 = ix0 + 1; //OC26042019
+			double tx = (x - (x_min + x_step*ix0))/x_step;
+
+	        //long iy0 = (long)((y - y_min)/y_step + truncTol);
+	        long long iy0 = (long long)((y - y_min)/y_step + truncTol); //OC26042019
+			if(iy0 < 0) iy0 = 0;
+			else if(iy0 >= ny - 1) iy0 = ny - 2;
+
+			//long iy1 = iy0 + 1;
+			long long iy1 = iy0 + 1; //OC26042019
+			double ty = (y - (y_min + y_step*iy0))/y_step;
+
+			long long nx_ix_per = nx*ix_per;
+			long long iy0_nx_ix_per = iy0*nx_ix_per;
+			long long iy1_nx_ix_per = iy1*nx_ix_per;
+			long long ix0_ix_per_p_ix_ofst = ix0*ix_per + ix_ofst;
+			long long ix1_ix_per_p_ix_ofst = ix1*ix_per + ix_ofst;
+
+			double a00 = *(ar_f + (iy0_nx_ix_per + ix0_ix_per_p_ix_ofst));
+			double f10 = *(ar_f + (iy0_nx_ix_per + ix1_ix_per_p_ix_ofst));
+			double f01 = *(ar_f + (iy1_nx_ix_per + ix0_ix_per_p_ix_ofst));
+			double f11 = *(ar_f + (iy1_nx_ix_per + ix1_ix_per_p_ix_ofst));
+			double a10 = f10 - a00;
+			double a01 = f01 - a00;
+			double a11 = a00 - f01 - f10 + f11;
+			return a00 + tx*(a10 + ty*a11) + ty*a01;
+		}
+		else if(ord == 2) //bi-quadratic interpolation based on 6 points
+		{
+			//long ix0 = (long)((x - x_min)/x_step + truncTol);
+			long long ix0 = (long long)((x - x_min)/x_step + truncTol); //OC26042019
+			if(ix0 < 1) ix0 = 1;
+			else if(ix0 >= nx - 1) ix0 = nx - 2;
+
+			//long ixm1 = ix0 - 1;
+			//long ix1 = ix0 + 1;
+			long long ixm1 = ix0 - 1; //OC26042019
+			long long ix1 = ix0 + 1;
+			double tx = (x - (x_min + x_step*ix0))/x_step;
+
+			//long iy0 = (long)((y - y_min)/y_step + truncTol);
+			long long iy0 = (long long)((y - y_min)/y_step + truncTol); //OC26042019
+			if(iy0 < 1) iy0 = 1;
+			else if(iy0 >= ny - 1) iy0 = ny - 2;
+
+			//long iym1 = iy0 - 1;
+			//long iy1 = iy0 + 1;
+			long long iym1 = iy0 - 1;
+			long long iy1 = iy0 + 1;
+			double ty = (y - (y_min + y_step*iy0))/y_step;
+
+			long long nx_ix_per = nx*ix_per;
+			long long iym1_nx_ix_per = iym1*nx_ix_per;
+			long long iy0_nx_ix_per = iy0*nx_ix_per;
+			long long iy1_nx_ix_per = iy1*nx_ix_per;
+			long long ixm1_ix_per_p_ix_ofst = ixm1*ix_per + ix_ofst;
+			long long ix0_ix_per_p_ix_ofst = ix0*ix_per + ix_ofst;
+			long long ix1_ix_per_p_ix_ofst = ix1*ix_per + ix_ofst;
+
+			double fm10 = *(ar_f + (iy0_nx_ix_per + ixm1_ix_per_p_ix_ofst));
+			double a00 = *(ar_f + (iy0_nx_ix_per + ix0_ix_per_p_ix_ofst));
+			double f10 = *(ar_f + (iy0_nx_ix_per + ix1_ix_per_p_ix_ofst));
+			double f0m1 = *(ar_f + (iym1_nx_ix_per + ix0_ix_per_p_ix_ofst));
+			double f01 = *(ar_f + (iy1_nx_ix_per + ix0_ix_per_p_ix_ofst));
+			double f11 = *(ar_f + (iy1_nx_ix_per + ix1_ix_per_p_ix_ofst));
+			double a10 = 0.5*(f10 - fm10);
+			double a01 = 0.5*(f01 - f0m1);
+			double a11 = a00 - f01 - f10 + f11;
+			double a20 = 0.5*(f10 + fm10) - a00;
+			double a02 = 0.5*(f01 + f0m1) - a00;
+			return a00 + tx*(a10 + tx*a20 + ty*a11) + ty*(a01 + ty*a02);
+		}
+		else if(ord == 3) //bi-cubic interpolation based on 12 points
+		{
+			//long ix0 = (long)((x - x_min)/x_step + truncTol);
+			long long ix0 = (long long)((x - x_min)/x_step + truncTol); //OC26042019
+			if(ix0 < 1) ix0 = 1;
+			else if(ix0 >= nx - 2) ix0 = nx - 3;
+
+			//long ixm1 = ix0 - 1;
+			//long ix1 = ix0 + 1;
+			//long ix2 = ix0 + 2;
+			long long ixm1 = ix0 - 1; //OC26042019
+			long long ix1 = ix0 + 1;
+			long long ix2 = ix0 + 2;
+			double tx = (x - (x_min + x_step*ix0))/x_step;
+
+			//long iy0 = (long)((y - y_min)/y_step + truncTol);
+			long long iy0 = (long long)((y - y_min)/y_step + truncTol); //OC26042019
+			if(iy0 < 1) iy0 = 1;
+			else if(iy0 >= ny - 2) iy0 = ny - 3;
+
+			//long iym1 = iy0 - 1;
+			//long iy1 = iy0 + 1;
+			//long iy2 = iy0 + 2;
+			long long iym1 = iy0 - 1; //OC26042019
+			long long iy1 = iy0 + 1;
+			long long iy2 = iy0 + 2;
+			double ty = (y - (y_min + y_step*iy0))/y_step;
+
+			long long nx_ix_per = nx*ix_per;
+			long long iym1_nx_ix_per = iym1*nx_ix_per;
+			long long iy0_nx_ix_per = iy0*nx_ix_per;
+			long long iy1_nx_ix_per = iy1*nx_ix_per;
+			long long iy2_nx_ix_per = iy2*nx_ix_per;
+			long long ixm1_ix_per_p_ix_ofst = ixm1*ix_per + ix_ofst;
+			long long ix0_ix_per_p_ix_ofst = ix0*ix_per + ix_ofst;
+			long long ix1_ix_per_p_ix_ofst = ix1*ix_per + ix_ofst;
+			long long ix2_ix_per_p_ix_ofst = ix2*ix_per + ix_ofst;
+
+			double f0m1 = *(ar_f + (iym1_nx_ix_per + ix0_ix_per_p_ix_ofst));
+			double f1m1 = *(ar_f + (iym1_nx_ix_per + ix1_ix_per_p_ix_ofst));
+			double fm10 = *(ar_f + (iy0_nx_ix_per + ixm1_ix_per_p_ix_ofst));
+			double a00 = *(ar_f + (iy0_nx_ix_per + ix0_ix_per_p_ix_ofst));
+			double f10 = *(ar_f + (iy0_nx_ix_per + ix1_ix_per_p_ix_ofst));
+			double f20 = *(ar_f + (iy0_nx_ix_per + ix2_ix_per_p_ix_ofst));
+			double fm11 = *(ar_f + (iy1_nx_ix_per + ixm1_ix_per_p_ix_ofst));
+			double f01 = *(ar_f + (iy1_nx_ix_per + ix0_ix_per_p_ix_ofst));
+			double f11 = *(ar_f + (iy1_nx_ix_per + ix1_ix_per_p_ix_ofst));
+			double f21 = *(ar_f + (iy1_nx_ix_per + ix2_ix_per_p_ix_ofst));
+			double f02 = *(ar_f + (iy2_nx_ix_per + ix0_ix_per_p_ix_ofst));
+			double f12 = *(ar_f + (iy2_nx_ix_per + ix1_ix_per_p_ix_ofst));
+			double a10 = -0.5*a00 + f10 - f20/6. - fm10/3.;
+			double a01 = -0.5*a00 + f01 - f02/6. - f0m1/3.;
+			double a11 = -0.5*(f01 + f10) + (f02 - f12 + f20 - f21)/6. + (f0m1 - f1m1 + fm10 - fm11)/3. + f11;
+			double a20 = -a00 + 0.5*(f10 + fm10);
+			double a02 = -a00 + 0.5*(f01 + f0m1);
+			double a21 = a00 - f01 + 0.5*(f11 - f10 - fm10 + fm11);
+			double a12 = a00 - f10 + 0.5*(f11 - f01 - f0m1 + f1m1);
+			double a30 = 0.5*(a00 - f10) + (f20 - fm10)/6.;
+			double a03 = 0.5*(a00 - f01) + (f02 - f0m1)/6.;
+			double a31 = 0.5*(f01 + f10 - f11 - a00) + (f21 + fm10 - f20 - fm11)/6.;
+			double a13 = 0.5*(f10 - f11 - a00 + f01) + (f0m1 + f12 - f02 - f1m1)/6.;
+			return a00 + tx*(a10 + tx*(a20 + tx*(a30 + ty*a31) + ty*a21) + ty*a11) + ty*(a01 + ty*(a02 + ty*(a03 + tx*a13) + tx*a12));
+		}
+		else return 0;
+	}
 };
 
 //-------------------------------------------------------------------------

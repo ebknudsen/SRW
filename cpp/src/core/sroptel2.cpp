@@ -16,6 +16,14 @@
 #include "srmlttsk.h"
 #include "srerror.h"
 
+//OC31102018: added by SY at parallelizing SRW via OpenMP
+//#include "srwlib.h"
+//#include "stdio.h"
+
+#ifdef _WITH_OMP //OC31102018: added by SY at parallelizing SRW via OpenMP
+#include "omp.h"
+#endif
+
 extern srTYield srYield;
 
 //*************************************************************************
@@ -35,9 +43,15 @@ int srTGenOptElem::PropagateRadiationMeth_0(srTSRWRadStructAccessData* pRadAcces
  //in the "slices".
  //It is virtual ("standard" processing). Known re-definitions: in srTDriftSpace
 
-	srTSRWRadStructAccessData *pRadDataSingleE = 0, *pPrevRadDataSingleE = 0;
-	
+	//OC31102018: added by SY at parallelizing SRW via OpenMP
+	//double start;
+	//get_walltime (&start);
+
 	int result=0;
+
+#ifndef _WITH_OMP //OC31102018
+
+	srTSRWRadStructAccessData *pRadDataSingleE = 0, *pPrevRadDataSingleE = 0;
 	if(pRadAccessData->ne == 1)
 	{
 		pRadDataSingleE = pRadAccessData;
@@ -56,6 +70,8 @@ int srTGenOptElem::PropagateRadiationMeth_0(srTSRWRadStructAccessData* pRadAcces
 	//separate processing of wavefront radius is necessary
 	double origRobsX = pRadAccessData->RobsX, origRobsXAbsErr = pRadAccessData->RobsXAbsErr;
 	double origRobsZ = pRadAccessData->RobsZ, origRobsZAbsErr = pRadAccessData->RobsZAbsErr;
+	double origXc = pRadAccessData->xc; //OC180813
+	double origZc = pRadAccessData->zc;
 
 	const int AmOfMoments = 11;
 	int neOrig = pRadAccessData->ne;
@@ -74,6 +90,9 @@ int srTGenOptElem::PropagateRadiationMeth_0(srTSRWRadStructAccessData* pRadAcces
 			pRadDataSingleE->pMomZ = pRadAccessData->pMomZ + OffsetMom;
 			pRadDataSingleE->RobsX = origRobsX; pRadDataSingleE->RobsXAbsErr = origRobsXAbsErr;
 			pRadDataSingleE->RobsZ = origRobsZ; pRadDataSingleE->RobsZAbsErr = origRobsZAbsErr;
+
+			pRadDataSingleE->xc = origXc; //OC180813
+			pRadDataSingleE->zc = origZc;
 
 			//if(pRadAccessData->xStart != pRadDataSingleE->xStart) pRadDataSingleE->xStart = pRadAccessData->xStart;
 			//if(pRadAccessData->xStep != pRadDataSingleE->xStep) pRadDataSingleE->xStep = pRadAccessData->xStep;
@@ -100,7 +119,8 @@ int srTGenOptElem::PropagateRadiationMeth_0(srTSRWRadStructAccessData* pRadAcces
 			//the above doesn't change the transverse grid parameters in *pRadAccessData
 
 			//vRadSlices.push_back(*pRadDataSingleE); //this automatically calls destructor, which can eventually delete "emulated" structs!
-			srTSRWRadStructAccessData copyRadDataSingleE(*pRadDataSingleE); //this doesn't assume to copy pBaseRadX, pBaseRadZ
+			//srTSRWRadStructAccessData copyRadDataSingleE(*pRadDataSingleE); //this doesn't assume to copy pBaseRadX, pBaseRadZ
+			srTSRWRadStructAccessData copyRadDataSingleE(*pRadDataSingleE, false); //OC290813 fixing memory leak(?) //this doesn't assume to copy pBaseRadX, pBaseRadZ
 			copyRadDataSingleE.pBaseRadX = copyRadDataSingleE.pBaseRadZ = 0; copyRadDataSingleE.BaseRadWasEmulated = false;
 			vRadSlices.push_back(copyRadDataSingleE);
 			
@@ -119,6 +139,149 @@ int srTGenOptElem::PropagateRadiationMeth_0(srTSRWRadStructAccessData* pRadAcces
 
 	if((pRadDataSingleE != 0) && (pRadDataSingleE != pRadAccessData)) delete pRadDataSingleE;
 	if((pPrevRadDataSingleE != 0) && (pPrevRadDataSingleE != pRadAccessData)) delete pPrevRadDataSingleE;
+
+#else //OC31102018: modified by SY at parallelizing SRW via OpenMP
+
+	if(pRadAccessData->ne == 1)
+	{
+		//SY: nothing more is actually needed in this case
+		return PropagateRadiationSingleE_Meth_0(pRadAccessData, 0); //from derived classes
+
+		//OC31102018: added by SY (for profiling?) at parallelizing SRW via OpenMP
+		//srwlPrintTime(": PropagateRadiationMeth_0 : PropagateRadiationSingleE_Meth_0 - single",&start);
+	}
+
+	srTSRWRadStructAccessData *pPrevRadDataSingleE = 0;
+
+	if(!m_PropWfrInPlace)
+	{
+		if(result = SetupNewRadStructFromSliceConstE(pRadAccessData, -1, pPrevRadDataSingleE)) return result;
+	}
+
+	//separate processing of wavefront radius is necessary
+	double origRobsX = pRadAccessData->RobsX, origRobsXAbsErr = pRadAccessData->RobsXAbsErr;
+	double origRobsZ = pRadAccessData->RobsZ, origRobsZAbsErr = pRadAccessData->RobsZAbsErr;
+	double origXc = pRadAccessData->xc; //OC180813
+	double origZc = pRadAccessData->zc;
+
+	const int AmOfMoments = 11;
+	int neOrig = pRadAccessData->ne;
+
+	vector<srTSRWRadStructAccessData> vRadSlices; //to keep grid parameters of slices for eventual change of the main 3D grid and re-interpolation at the end
+	srTSRWRadStructAccessData** pRadSlices= new srTSRWRadStructAccessData* [neOrig];
+
+	bool gridParamWereModifInSlices = false;
+	bool* gridParamWereModif = new bool[neOrig];
+
+	//SY: return outside of parallel regions is not allowed - we do it outside
+
+	int* results = new int[neOrig];
+	if(results == 0) return MEMORY_ALLOCATION_FAILURE;
+	for(int ie = 0; ie < neOrig; ie++) results[ie] = 0;
+
+	//OC31102018: added by SY (for profiling?) at parallelizing SRW via OpenMP
+	//srwlPrintTime(": PropagateRadiationMeth_0 : before cycle",&start);
+
+	//SY: we cannot do it in parallel if previous field is needed (which is not the case in the current version of SRW)
+	#pragma omp parallel if (pPrevRadDataSingleE == 0)
+	{
+		int threadNum = omp_get_thread_num();
+		srTSRWRadStructAccessData *pRadDataSingleE = 0;
+		results[threadNum] = SetupNewRadStructFromSliceConstE(pRadAccessData, -1, pRadDataSingleE);
+		//allocates new pRadDataSingleE !
+		if(!results[threadNum])
+		{
+			#pragma omp for
+			for(int ie=0; ie<neOrig; ie++)
+			{
+				gridParamWereModif[ie] = false;
+				if(results[ie] = ExtractRadSliceConstE(pRadAccessData, ie, pRadDataSingleE->pBaseRadX, pRadDataSingleE->pBaseRadZ)) continue;
+				pRadDataSingleE->eStart = pRadAccessData->eStart + ie*pRadAccessData->eStep;
+				long OffsetMom = AmOfMoments*ie;
+				pRadDataSingleE->pMomX = pRadAccessData->pMomX + OffsetMom;
+				pRadDataSingleE->pMomZ = pRadAccessData->pMomZ + OffsetMom;
+				pRadDataSingleE->RobsX = origRobsX; pRadDataSingleE->RobsXAbsErr = origRobsXAbsErr;
+				pRadDataSingleE->RobsZ = origRobsZ; pRadDataSingleE->RobsZAbsErr = origRobsZAbsErr;
+
+				pRadDataSingleE->xc = origXc; //OC180813
+				pRadDataSingleE->zc = origZc;
+
+				//if(pRadAccessData->xStart != pRadDataSingleE->xStart) pRadDataSingleE->xStart = pRadAccessData->xStart;
+				//if(pRadAccessData->xStep != pRadDataSingleE->xStep) pRadDataSingleE->xStep = pRadAccessData->xStep;
+				//if(pRadAccessData->zStart != pRadDataSingleE->zStart) pRadDataSingleE->zStart = pRadAccessData->zStart;
+				//if(pRadAccessData->zStep != pRadDataSingleE->zStep) pRadDataSingleE->zStep = pRadAccessData->zStep;
+				pRadDataSingleE->xStart = pRadAccessData->xStart;
+				pRadDataSingleE->xStep = pRadAccessData->xStep;
+				pRadDataSingleE->zStart = pRadAccessData->zStart;
+				pRadDataSingleE->zStep = pRadAccessData->zStep;
+
+				if(pPrevRadDataSingleE != 0)
+				{
+					if(results[ie] = ExtractRadSliceConstE(pRadAccessData, ie, pPrevRadDataSingleE->pBaseRadX, pPrevRadDataSingleE->pBaseRadZ, true)) continue; //OC120908
+					pPrevRadDataSingleE->eStart = pRadDataSingleE->eStart;
+					pPrevRadDataSingleE->pMomX = pRadDataSingleE->pMomX;
+					pPrevRadDataSingleE->pMomZ = pRadDataSingleE->pMomZ;
+				}
+				if(results[ie] = PropagateRadiationSingleE_Meth_0(pRadDataSingleE, pPrevRadDataSingleE)) continue; //from derived classes
+
+				if(results[ie] = UpdateGenRadStructSliceConstE_Meth_0(pRadDataSingleE, ie, pRadAccessData,1)) continue;
+				//the above doesn't change the transverse grid parameters in *pRadAccessData
+
+				//vRadSlices.push_back(*pRadDataSingleE); //this automatically calls destructor, which can eventually delete "emulated" structs!
+				//srTSRWRadStructAccessData copyRadDataSingleE(*pRadDataSingleE); //this doesn't assume to copy pBaseRadX, pBaseRadZ
+				//srTSRWRadStructAccessData copyRadDataSingleE(*pRadDataSingleE, false); //OC290813 fixing memory leak(?) //this doesn't assume to copy pBaseRadX, pBaseRadZ
+				//SY: we cannot use push here, so use normal array instead (probably using of vector would be still possible, but just to be sure)
+
+				pRadSlices[ie] = new srTSRWRadStructAccessData(*pRadDataSingleE, false);
+				pRadSlices[ie]->pBaseRadX = pRadSlices[ie]->pBaseRadZ = 0; pRadSlices[ie]->BaseRadWasEmulated = false;
+
+				if((pRadDataSingleE->nx != pRadAccessData->nx) || (pRadDataSingleE->xStart != pRadAccessData->xStart) || (pRadDataSingleE->xStep != pRadAccessData->xStep)) gridParamWereModif[ie] = true;
+				if((pRadDataSingleE->nz != pRadAccessData->nz) || (pRadDataSingleE->zStart != pRadAccessData->zStart) || (pRadDataSingleE->zStep != pRadAccessData->zStep)) gridParamWereModif[ie] = true;
+			}
+		}
+		if(pRadDataSingleE != 0) delete pRadDataSingleE;
+	}
+
+	for(int ie = 0; ie < neOrig; ie++) if(results[ie]) return results[ie];
+	delete[]  results;
+
+	//OC31102018: added by SY (for profiling?) at parallelizing SRW via OpenMP
+	//char str[256];
+	//sprintf(str,"%s %d",":PropagateRadiationMeth_0 : PropagateRadiationSingleE_Meth_0 - cycles:",neOrig);
+	//srwlPrintTime(str,&start);
+
+	//SY: update limits and Radii (cannot be done in parallel)
+	for(int ie = 0; ie < neOrig; ie++) if(result = UpdateGenRadStructSliceConstE_Meth_0(pRadSlices[ie], ie, pRadAccessData,2)) return result;
+
+	//OC31102018: added by SY (for profiling?) at parallelizing SRW via OpenMP
+	//srwlPrintTime(":PropagateRadiationMeth_0 : UpdateGenRadStructSliceConstE_Meth_0:",&start);
+
+	if((pRadAccessData->RobsX != 0) && (pRadAccessData->RobsXAbsErr == 0)) pRadAccessData->RobsXAbsErr = ::fabs(0.1*pRadAccessData->RobsX);
+	if((pRadAccessData->RobsZ != 0) && (pRadAccessData->RobsZAbsErr == 0)) pRadAccessData->RobsZAbsErr = ::fabs(0.1*pRadAccessData->RobsZ);
+
+	for(int i=0;i<neOrig;i++) if(gridParamWereModif[i]) gridParamWereModifInSlices = true;
+
+	if(gridParamWereModifInSlices)
+	{//to test!
+		for(int ie = 0; ie < neOrig; ie++)
+		{
+			vRadSlices.push_back(*pRadSlices[ie]);
+			delete pRadSlices[ie];
+		}
+		// SY: instead of using pRadDataSingleE (which is not accessible here) we create an auxiliary structure
+		srTSRWRadStructAccessData *pAuxRadData = 0;
+		if(result = SetupNewRadStructFromSliceConstE(pRadAccessData, -1, pAuxRadData)) return result;
+		if(result = ReInterpolateWfrDataOnNewTransvMesh(vRadSlices, pAuxRadData, pRadAccessData)) return result;
+		if(pAuxRadData != 0) delete pAuxRadData;
+	}
+
+	delete[] pRadSlices;
+	delete[] gridParamWereModif;
+
+	if(pPrevRadDataSingleE != 0) delete pPrevRadDataSingleE;
+
+#endif
+
 	return result;
 }
 
@@ -327,8 +490,11 @@ int srTGenOptElem::ReInterpolateWfrDataOnNewTransvMesh(vector<srTSRWRadStructAcc
 	//if(pAuxRadSingleE->nx <= pRadRes->nx) return 0; //to fire error?
 	if(pAuxRadSingleE->nx != pRadRes->nx) return 0; //to fire error?
 
-	double xAbsTol = 0.000001*pRadRes->xStep;
-	double zAbsTol = 0.000001*pRadRes->zStep;
+	//double xAbsTol = 0.000001*pRadRes->xStep;
+	//double zAbsTol = 0.000001*pRadRes->zStep;
+	double xAbsTol = 0.0001*pRadRes->xStep; //OC271214
+	double zAbsTol = 0.0001*pRadRes->zStep;
+
 	int result = 0;
 
 	float *pOrigBufEX = pAuxRadSingleE->pBaseRadX, *pOrigBufEZ = pAuxRadSingleE->pBaseRadZ;
@@ -850,26 +1016,29 @@ int srTGenOptElem::SetupCharacteristicSections1D(srTSRWRadStructAccessData* pRad
 	srTMinMaxEParam MinMaxE2D;
 	pRadAccessData->FindMinMaxReE(MinMaxE2D);
 	float MaxAbsE2D;
-	long xIndMaxAbsE2D, zIndMaxAbsE2D;
+	//long xIndMaxAbsE2D, zIndMaxAbsE2D;
+	long long xIndMaxAbsE2D, zIndMaxAbsE2D;
 	MinMaxE2D.FindGenMaxAbsE(MaxAbsE2D, xIndMaxAbsE2D, zIndMaxAbsE2D);
 
 	float MaxAbsEVsX, MaxAbsEVsZ;
-	long IndMaxAbsEVsX, IndMaxAbsEVsZ, IndDummy;
+	//long IndMaxAbsEVsX, IndMaxAbsEVsZ, IndDummy;
+	long long IndMaxAbsEVsX, IndMaxAbsEVsZ, IndDummy;
 	srTMinMaxEParam MinMaxE1D;
 	SectVsX.FindMinMaxReE(MinMaxE1D);
 	MinMaxE1D.FindGenMaxAbsE(MaxAbsEVsX, IndMaxAbsEVsX, IndDummy);
 	SectVsZ.FindMinMaxReE(MinMaxE1D);
 	MinMaxE1D.FindGenMaxAbsE(MaxAbsEVsZ, IndMaxAbsEVsZ, IndDummy);
 
-	long ixcPrev = ixc, izcPrev = izc;
+	//long ixcPrev = ixc, izcPrev = izc;
+	long long ixcPrev = ixc, izcPrev = izc;
 	float MaxAbsE2D_RatForMinE = (float)(MaxAbsE2D*RatForMinE);
 	if(MaxAbsEVsX < MaxAbsE2D_RatForMinE) 
 	{
-		izc = zIndMaxAbsE2D;
+		izc = (long)zIndMaxAbsE2D;
 	}
 	if(MaxAbsEVsZ < MaxAbsE2D_RatForMinE)
 	{
-		ixc = xIndMaxAbsE2D;
+		ixc = (long)xIndMaxAbsE2D;
 	}
 	
 	//if((izc != izcPrev) || (ixc != ixcPrev))
@@ -1068,10 +1237,12 @@ int srTGenOptElem::FindPostResizeCenterCorrection(srTRadSect1D& Sect1D, srTParPr
 		if(result = PropagateRadiationSimple1D(&SectDpl)) return result;
 	}
 
-	long MaxAbsReExInd;
+	//long MaxAbsReExInd;
+	long long MaxAbsReExInd;
 	float MaxAbsReEx, MaxAbsEx, MaxAbsEz;
 	char TreatExOrEz;
-	long IndMaxAbsEx, IndMaxAbsEz;
+	//long IndMaxAbsEx, IndMaxAbsEz;
+	long long IndMaxAbsEx, IndMaxAbsEz;
 	FindMaximumAbsReE(SectDpl, MaxAbsEx, IndMaxAbsEx, MaxAbsEz, IndMaxAbsEz);
 	if(MaxAbsEx > MaxAbsEz)
 	{
@@ -1342,14 +1513,16 @@ int srTGenOptElem::AnalizeFringes(srTRadSect1D& Sect1D, char TreatExOrEz, srTFri
 		//OC210508
 		if(TotFringes <= 0) TotFringes = 1;
 
-		long SumOfPoints = 0;
+		//long SumOfPoints = 0;
+		long long SumOfPoints = 0;
 		for(int i=iSt; i<=iFi; i++) SumOfPoints += FringeContent[i];
 		LeftPointsPerFringe = 0.8*double(SumOfPoints)/double(TotFringes); // To steer
 		RightPointsPerFringe = LeftPointsPerFringe;
 	}
 	else if(TreatTwoEdgeIntervals)
 	{
-		long SumOfPoints = 0;
+		//long SumOfPoints = 0;
+		long long SumOfPoints = 0;
 		for(int i1=1; i1<(AmOfFringesToTreatAtEdges + 1); i1++) SumOfPoints += FringeContent[i1];
 		LeftPointsPerFringe = double(SumOfPoints)/double(AmOfFringesToTreatAtEdges);
 
@@ -1782,12 +1955,14 @@ int srTGenOptElem::FindPostResizeForRange1D(srTRadSect1D& Sect1D, srTParPrecWfrP
 		if(result = PropagateRadiationSimple1D(&SectDpl)) return result; // To implement in all elements
 	}
 
-	long MaxAbsReExInd;
+	//long MaxAbsReExInd;
+	long long MaxAbsReExInd;
 	float MaxAbsReEx;
 	char TreatExOrEz;
 
 	float MaxAbsEx, MaxAbsEz;
-	long IndMaxAbsEx, IndMaxAbsEz;
+	//long IndMaxAbsEx, IndMaxAbsEz;
+	long long IndMaxAbsEx, IndMaxAbsEz;
 	FindMaximumAbsReE(SectDpl, MaxAbsEx, IndMaxAbsEx, MaxAbsEz, IndMaxAbsEz);
 	if(MaxAbsEx > MaxAbsEz)
 	{
@@ -1851,12 +2026,14 @@ void srTGenOptElem::FindThresholdBorders(srTRadSect1D& Sect1D, double AbsThresh,
 
 //*************************************************************************
 
-void srTGenOptElem::FindMaximumAbsReE(srTRadSect1D& Sect1D, float& MaxAbsEx, long& IndMaxAbsEx, float& MaxAbsEz, long& IndMaxAbsEz)
+//void srTGenOptElem::FindMaximumAbsReE(srTRadSect1D& Sect1D, float& MaxAbsEx, long& IndMaxAbsEx, float& MaxAbsEz, long& IndMaxAbsEz)
+void srTGenOptElem::FindMaximumAbsReE(srTRadSect1D& Sect1D, float& MaxAbsEx, long long& IndMaxAbsEx, float& MaxAbsEz, long long& IndMaxAbsEz)
 {
 	float MaxValEx = (float)(-1.E+23), MaxValEz = (float)(-1.E+23);
 	float *tEx = Sect1D.pEx, *tEz = Sect1D.pEz;
 
-	for(long i=0; i<Sect1D.np; i++)
+	//for(long i=0; i<Sect1D.np; i++)
+	for(long long i=0; i<Sect1D.np; i++)
 	{
 		float TestMaxEx = (float)::fabs(*tEx); tEx += 2;
 		if(TestMaxEx > MaxValEx) 
